@@ -243,6 +243,9 @@ class VehicleInfo(object):
         frames = self.options[vehicle]["frames"]
         if frame in frames:
             ret = self.options[vehicle]["frames"][frame]
+#            defaults = ['+', 'quad', 'X']
+#            ret['default_params_filename'] = 'default_params/copter{}_{}.parm'.format('-' + frame if frame not in defaults, opts.instance)
+            ret['default_params_filename'] = 'default_params/MACE_params/copter_{}.parm'.format(opts.instance)
         else:
             for p in ["octa", "tri", "y6", "firefly", "heli", "gazebo", "last_letter", "jsbsim", "quadplane", "plane-elevon", "plane-vtail", "plane"]:
                 if frame.startswith(p):
