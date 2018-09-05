@@ -6,11 +6,9 @@ bool ModeGuided::_enter()
     // initialise waypoint speed
     set_desired_speed_to_default();
 
-    // when entering guided mode we set the target as the current location.
-    set_desired_location(rover.current_loc);
-
-    // guided mode never travels in reverse
-    rover.set_reverse(false);
+    // set desired location to reasonable stopping point
+    calc_stopping_location(_destination);
+    set_desired_location(_destination);
 
     return true;
 }
@@ -30,8 +28,8 @@ void ModeGuided::update()
             // determine if we should keep navigating
             if (!_reached_destination || (rover.is_boat() && !near_wp)) {
                 // drive towards destination
-                calc_steering_to_waypoint(_reached_destination ? rover.current_loc : _origin, _destination);
-                calc_throttle(calc_reduced_speed_for_turn_or_distance(_desired_speed), true);
+                calc_steering_to_waypoint(_reached_destination ? rover.current_loc : _origin, _destination, _reversed);
+                calc_throttle(calc_reduced_speed_for_turn_or_distance(_reversed ? -_desired_speed : _desired_speed), true, true);
             } else {
                 stop_vehicle();
             }
@@ -48,10 +46,9 @@ void ModeGuided::update()
             if (have_attitude_target) {
                 // run steering and throttle controllers
                 calc_steering_to_heading(_desired_yaw_cd, _desired_speed < 0);
-                calc_throttle(_desired_speed, true);
+                calc_throttle(calc_reduced_speed_for_turn_or_distance(_desired_speed), true, true);
             } else {
                 stop_vehicle();
-                g2.motors.set_steering(0.0f);
             }
             break;
         }
@@ -65,12 +62,14 @@ void ModeGuided::update()
             }
             if (have_attitude_target) {
                 // run steering and throttle controllers
-                float steering_out = attitude_control.get_steering_out_rate(radians(_desired_yaw_rate_cds / 100.0f), g2.motors.have_skid_steering(), g2.motors.limit.steer_left, g2.motors.limit.steer_right, _desired_speed < 0);
+                float steering_out = attitude_control.get_steering_out_rate(radians(_desired_yaw_rate_cds / 100.0f),
+                                                                            g2.motors.limit.steer_left,
+                                                                            g2.motors.limit.steer_right,
+                                                                            rover.G_Dt);
                 g2.motors.set_steering(steering_out * 4500.0f);
-                calc_throttle(_desired_speed, true);
+                calc_throttle(_desired_speed, true, true);
             } else {
                 stop_vehicle();
-                g2.motors.set_steering(0.0f);
             }
             break;
         }

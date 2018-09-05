@@ -19,6 +19,7 @@
 #include <AP_Common/Bitmask.h>
 #include <AP_Volz_Protocol/AP_Volz_Protocol.h>
 #include <AP_SBusOut/AP_SBusOut.h>
+#include <AP_BLHeli/AP_BLHeli.h>
 
 #define NUM_SERVO_CHANNELS 16
 
@@ -300,6 +301,9 @@ public:
     // adjust trim of a channel by a small increment
     void adjust_trim(SRV_Channel::Aux_servo_function_t function, float v);
 
+    // set MIN/MAX parameters for a function
+    static void set_output_min_max(SRV_Channel::Aux_servo_function_t function, uint16_t min_pwm, uint16_t max_pwm);
+    
     // save trims
     void save_trim(void);
 
@@ -308,11 +312,8 @@ public:
         flags.k_throttle_reversible = true;
     }
 
-    // set all outputs to the TRIM value
-    static void output_trim_all(void);
-
     // setup IO failsafe for all channels to trim
-    static void setup_failsafe_trim_all(void);
+    static void setup_failsafe_trim_all_non_motors(void);
 
     // set output for all channels matching the given function type, allow radio_trim to center servo
     static void set_output_pwm_trimmed(SRV_Channel::Aux_servo_function_t function, int16_t value);
@@ -421,6 +422,9 @@ public:
 
     static void push();
 
+    // disable output to a set of channels given by a mask. This is used by the AP_BLHeli code
+    static void set_disabled_channel_mask(uint16_t mask) { disabled_mask = mask; }
+
 private:
     struct {
         bool k_throttle_reversible:1;
@@ -445,6 +449,13 @@ private:
     AP_SBusOut sbus;
     static AP_SBusOut *sbus_ptr;
 
+#if HAL_SUPPORT_RCOUT_SERIAL
+    // support for BLHeli protocol
+    AP_BLHeli blheli;
+    static AP_BLHeli *blheli_ptr;
+#endif
+    static uint16_t disabled_mask;
+    
     SRV_Channel obj_channels[NUM_SERVO_CHANNELS];
 
     static struct srv_function {

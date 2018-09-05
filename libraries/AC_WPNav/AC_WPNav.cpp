@@ -49,7 +49,7 @@ const AP_Param::GroupInfo AC_WPNav::var_info[] = {
     // @Range: 50 500
     // @Increment: 10
     // @User: Standard
-    AP_GROUPINFO("ACCEL",       5, AC_WPNav, _wp_accel_cms, WPNAV_ACCELERATION),
+    AP_GROUPINFO("ACCEL",       5, AC_WPNav, _wp_accel_cmss, WPNAV_ACCELERATION),
 
     // @Param: ACCEL_Z
     // @DisplayName: Waypoint Vertical Acceleration
@@ -58,7 +58,7 @@ const AP_Param::GroupInfo AC_WPNav::var_info[] = {
     // @Range: 50 500
     // @Increment: 10
     // @User: Standard
-    AP_GROUPINFO("ACCEL_Z",     6, AC_WPNav, _wp_accel_z_cms, WPNAV_WP_ACCEL_Z_DEFAULT),
+    AP_GROUPINFO("ACCEL_Z",     6, AC_WPNav, _wp_accel_z_cmss, WPNAV_WP_ACCEL_Z_DEFAULT),
 
     // @Param: RFND_USE
     // @DisplayName: Waypoint missions use rangefinder for terrain following
@@ -78,21 +78,7 @@ AC_WPNav::AC_WPNav(const AP_InertialNav& inav, const AP_AHRS_View& ahrs, AC_PosC
     _inav(inav),
     _ahrs(ahrs),
     _pos_control(pos_control),
-    _attitude_control(attitude_control),
-    _wp_last_update(0),
-    _wp_step(0),
-    _track_length(0.0f),
-    _track_length_xy(0.0f),
-    _track_desired(0.0f),
-    _limited_speed_xy_cms(0.0f),
-    _track_accel(0.0f),
-    _track_speed(0.0f),
-    _track_leash_length(0.0f),
-    _slow_down_dist(0.0f),
-    _spline_time(0.0f),
-    _spline_time_scale(0.0f),
-    _spline_vel_scaler(0.0f),
-    _yaw(0.0f)
+    _attitude_control(attitude_control)
 {
     AP_Param::setup_object_defaults(this, var_info);
 
@@ -105,7 +91,7 @@ AC_WPNav::AC_WPNav(const AP_InertialNav& inav, const AP_AHRS_View& ahrs, AC_PosC
     _flags.segment_type = SEGMENT_STRAIGHT;
 
     // sanity check some parameters
-    _wp_accel_cms = MIN(_wp_accel_cms, GRAVITY_MSS * 100.0f * tanf(ToRad(_attitude_control.lean_angle_max() * 0.01f)));
+    _wp_accel_cmss = MIN(_wp_accel_cmss, GRAVITY_MSS * 100.0f * tanf(ToRad(_attitude_control.lean_angle_max() * 0.01f)));
     _wp_radius_cm = MAX(_wp_radius_cm, WPNAV_WP_RADIUS_MIN);
 }
 
@@ -148,9 +134,9 @@ void AC_WPNav::update_brake(float ekfGndSpdLimit, float ekfNavVelGainScaler)
 ///     should be called once before the waypoint controller is used but does not need to be called before subsequent updates to destination
 void AC_WPNav::wp_and_spline_init()
 {
-    // check _wp_accel_cms is reasonable
-    if (_wp_accel_cms <= 0) {
-        _wp_accel_cms.set_and_save(WPNAV_ACCELERATION);
+    // check _wp_accel_cmss is reasonable
+    if (_wp_accel_cmss <= 0) {
+        _wp_accel_cmss.set_and_save(WPNAV_ACCELERATION);
     }
 
     // initialise position controller
@@ -163,9 +149,9 @@ void AC_WPNav::wp_and_spline_init()
 
     // initialise position controller speed and acceleration
     _pos_control.set_speed_xy(_wp_speed_cms);
-    _pos_control.set_accel_xy(_wp_accel_cms);
+    _pos_control.set_accel_xy(_wp_accel_cmss);
     _pos_control.set_speed_z(-_wp_speed_down_cms, _wp_speed_up_cms);
-    _pos_control.set_accel_z(_wp_accel_z_cms);
+    _pos_control.set_accel_z(_wp_accel_z_cmss);
     _pos_control.calc_leash_length_xy();
     _pos_control.calc_leash_length_z();
 
@@ -199,6 +185,16 @@ bool AC_WPNav::set_wp_destination(const Location_Class& destination)
 
     // set target as vector from EKF origin
     return set_wp_destination(dest_neu, terr_alt);
+}
+
+bool AC_WPNav::get_wp_destination(Location_Class& destination) {
+    Vector3f dest = get_wp_destination();
+    if (!AP::ahrs().get_origin(destination)) {
+        return false;
+    }
+    destination.offset(dest.x*0.01f, dest.y*0.01f);
+    destination.alt += dest.z;
+    return true;
 }
 
 /// set_wp_destination waypoint using position vector (distance from home in cm)
@@ -360,7 +356,7 @@ bool AC_WPNav::advance_wp_target_along_track(float dt)
     track_error = curr_delta - track_covered_pos;
 
     // calculate the horizontal error
-    float track_error_xy = norm(track_error.x, track_error.y);
+    _track_error_xy = norm(track_error.x, track_error.y);
 
     // calculate the vertical error
     float track_error_z = fabsf(track_error.z);
@@ -373,7 +369,7 @@ bool AC_WPNav::advance_wp_target_along_track(float dt)
     //   track_error is the line from the vehicle to the closest point on the track.  It is the "opposite" side
     //   track_leash_slack is the line from the closest point on the track to the target point.  It is the "adjacent" side.  We adjust this so the track_desired_max is no longer than the leash
     float track_leash_length_abs = fabsf(_track_leash_length);
-    float track_error_max_abs = MAX(_track_leash_length*track_error_z/leash_z, _track_leash_length*track_error_xy/_pos_control.get_leash_xy());
+    float track_error_max_abs = MAX(_track_leash_length*track_error_z/leash_z, _track_leash_length*_track_error_xy/_pos_control.get_leash_xy());
     track_leash_slack = (track_leash_length_abs > track_error_max_abs) ? safe_sqrt(sq(_track_leash_length) - sq(track_error_max_abs)) : 0;
     track_desired_max = track_covered + track_leash_slack;
 
@@ -390,7 +386,7 @@ bool AC_WPNav::advance_wp_target_along_track(float dt)
     // calculate point at which velocity switches from linear to sqrt
     float linear_velocity = _wp_speed_cms;
     float kP = _pos_control.get_pos_xy_p().kP();
-    if (kP >= 0.0f) {   // avoid divide by zero
+    if (is_positive(kP)) {   // avoid divide by zero
         linear_velocity = _track_accel/kP;
     }
 
@@ -511,8 +507,8 @@ bool AC_WPNav::update_wpnav()
 
     // allow the accel and speed values to be set without changing
     // out of auto mode. This makes it easier to tune auto flight
-    _pos_control.set_accel_xy(_wp_accel_cms);
-    _pos_control.set_accel_z(_wp_accel_z_cms);
+    _pos_control.set_accel_xy(_wp_accel_cmss);
+    _pos_control.set_accel_z(_wp_accel_z_cmss);
 
     // advance the target if necessary
     if (!advance_wp_target_along_track(dt)) {
@@ -567,15 +563,15 @@ void AC_WPNav::calculate_wp_leash_length()
         _track_speed = 0;
         _track_leash_length = WPNAV_LEASH_LENGTH_MIN;
     }else if(is_zero(_pos_delta_unit.z)){
-        _track_accel = _wp_accel_cms/pos_delta_unit_xy;
+        _track_accel = _wp_accel_cmss/pos_delta_unit_xy;
         _track_speed = _wp_speed_cms/pos_delta_unit_xy;
         _track_leash_length = _pos_control.get_leash_xy()/pos_delta_unit_xy;
     }else if(is_zero(pos_delta_unit_xy)){
-        _track_accel = _wp_accel_z_cms/pos_delta_unit_z;
+        _track_accel = _wp_accel_z_cmss/pos_delta_unit_z;
         _track_speed = speed_z/pos_delta_unit_z;
         _track_leash_length = leash_z/pos_delta_unit_z;
     }else{
-        _track_accel = MIN(_wp_accel_z_cms/pos_delta_unit_z, _wp_accel_cms/pos_delta_unit_xy);
+        _track_accel = MIN(_wp_accel_z_cmss/pos_delta_unit_z, _wp_accel_cmss/pos_delta_unit_xy);
         _track_speed = MIN(speed_z/pos_delta_unit_z, _wp_speed_cms/pos_delta_unit_xy);
         _track_leash_length = MIN(leash_z/pos_delta_unit_z, _pos_control.get_leash_xy()/pos_delta_unit_xy);
     }
@@ -684,9 +680,9 @@ bool AC_WPNav::set_spline_origin_and_destination(const Vector3f& origin, const V
         dt = 0.0f;
     }
 
-    // check _wp_accel_cms is reasonable to avoid divide by zero
-    if (_wp_accel_cms <= 0) {
-        _wp_accel_cms.set_and_save(WPNAV_ACCELERATION);
+    // check _wp_accel_cmss is reasonable to avoid divide by zero
+    if (_wp_accel_cmss <= 0) {
+        _wp_accel_cmss.set_and_save(WPNAV_ACCELERATION);
     }
 
     // segment start types
@@ -766,7 +762,7 @@ bool AC_WPNav::set_spline_origin_and_destination(const Vector3f& origin, const V
     _terrain_alt = terrain_alt;
 
     // calculate slow down distance
-    calc_slow_down_distance(_wp_speed_cms, _wp_accel_cms);
+    calc_slow_down_distance(_wp_speed_cms, _wp_accel_cmss);
 
     // get alt-above-terrain
     float terr_offset = 0.0f;
@@ -869,7 +865,7 @@ bool AC_WPNav::advance_spline_target_along_track(float dt)
         track_error.z -= terr_offset;
 
         // calculate the horizontal error
-        float track_error_xy = norm(track_error.x, track_error.y);
+        _track_error_xy = norm(track_error.x, track_error.y);
 
         // calculate the vertical error
         float track_error_z = fabsf(track_error.z);
@@ -884,7 +880,7 @@ bool AC_WPNav::advance_spline_target_along_track(float dt)
         }
 
         // calculate how far along the track we could move the intermediate target before reaching the end of the leash
-        float track_leash_slack = MIN(_track_leash_length*(leash_z-track_error_z)/leash_z, _track_leash_length*(leash_xy-track_error_xy)/leash_xy);
+        float track_leash_slack = MIN(_track_leash_length*(leash_z-track_error_z)/leash_z, _track_leash_length*(leash_xy-_track_error_xy)/leash_xy);
         if (track_leash_slack < 0.0f) {
             track_leash_slack = 0.0f;
         }
@@ -898,10 +894,10 @@ bool AC_WPNav::advance_spline_target_along_track(float dt)
 
         // if within the stopping distance from destination, set target velocity to sqrt of distance * 2 * acceleration
         if (!_flags.fast_waypoint && spline_dist_to_wp < _slow_down_dist) {
-            _spline_vel_scaler = safe_sqrt(spline_dist_to_wp * 2.0f * _wp_accel_cms);
+            _spline_vel_scaler = safe_sqrt(spline_dist_to_wp * 2.0f * _wp_accel_cmss);
         }else if(_spline_vel_scaler < vel_limit) {
             // increase velocity using acceleration
-            _spline_vel_scaler += _wp_accel_cms * dt;
+            _spline_vel_scaler += _wp_accel_cmss * dt;
         }
 
         // constrain target velocity
@@ -963,17 +959,16 @@ void AC_WPNav::calc_spline_pos_vel(float spline_time, Vector3f& position, Vector
 // get terrain's altitude (in cm above the ekf origin) at the current position (+ve means terrain below vehicle is above ekf origin's altitude)
 bool AC_WPNav::get_terrain_offset(float& offset_cm)
 {
-#if AP_TERRAIN_AVAILABLE
     // use range finder if connected
     if (_rangefinder_available && _rangefinder_use) {
         if (_rangefinder_healthy) {
             offset_cm = _inav.get_altitude() - _rangefinder_alt_cm;
             return true;
-        } else {
-            return false;
         }
+        return false;
     }
 
+#if AP_TERRAIN_AVAILABLE
     // use terrain database
     float terr_alt = 0.0f;
     if (_terrain != nullptr && _terrain->height_above_terrain(terr_alt, true)) {

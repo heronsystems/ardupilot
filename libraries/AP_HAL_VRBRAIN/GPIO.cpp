@@ -84,12 +84,6 @@ void VRBRAINGPIO::pinMode(uint8_t pin, uint8_t output)
     }
 }
 
-int8_t VRBRAINGPIO::analogPinToDigitalPin(uint8_t pin)
-{
-    return -1;
-}
-
-
 uint8_t VRBRAINGPIO::read(uint8_t pin) {
     switch (pin) {
 
@@ -176,12 +170,6 @@ void VRBRAINGPIO::toggle(uint8_t pin)
 /* Alternative interface: */
 AP_HAL::DigitalSource* VRBRAINGPIO::channel(uint16_t n) {
     return new VRBRAINDigitalSource(0);
-}
-
-/* Interrupt interface: */
-bool VRBRAINGPIO::attach_interrupt(uint8_t interrupt_num, AP_HAL::Proc p, uint8_t mode)
-{
-    return true;
 }
 
 /*

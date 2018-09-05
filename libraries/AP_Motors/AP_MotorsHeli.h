@@ -56,10 +56,6 @@ public:
         AP_Motors(loop_rate, speed_hz)
     {
         AP_Param::setup_object_defaults(this, var_info);
-
-        // initialise flags
-        _heliflags.landing_collective = 0;
-        _heliflags.rotor_runup_complete = 0;
     };
 
     // init
@@ -74,10 +70,10 @@ public:
     // output_min - sets servos to neutral point with motors stopped
     void output_min();
 
-    // output_test - spin a motor at the pwm value specified
+    // output_test_seq - spin a motor at the pwm value specified
     //  motor_seq is the motor's sequence number from 1 to the number of motors on the frame
     //  pwm value is an actual pwm value that will be output, normally in the range of 1000 ~ 2000
-    virtual void output_test(uint8_t motor_seq, int16_t pwm) = 0;
+    virtual void output_test_seq(uint8_t motor_seq, int16_t pwm) override = 0;
 
     //
     // heli specific methods
@@ -99,7 +95,7 @@ public:
     uint8_t get_rsc_mode() const { return _rsc_mode; }
 
     // get_rsc_setpoint - gets contents of _rsc_setpoint parameter (0~1)
-    float get_rsc_setpoint() const { return _rsc_setpoint / 1000.0f; }
+    float get_rsc_setpoint() const { return _rsc_setpoint * 0.001f; }
 
     // set_desired_rotor_speed - sets target rotor speed as a number from 0 ~ 1
     virtual void set_desired_rotor_speed(float desired_speed) = 0;
@@ -166,7 +162,7 @@ protected:
     virtual void move_actuators(float roll_out, float pitch_out, float coll_in, float yaw_out) = 0;
 
     // reset_swash_servo - free up swash servo for maximum movement
-    void reset_swash_servo(SRV_Channel *servo);
+    void reset_swash_servo(SRV_Channel::Aux_servo_function_t function);
 
     // init_outputs - initialise Servo/PWM ranges and endpoints
     virtual bool init_outputs() = 0;
@@ -184,6 +180,9 @@ protected:
     // to be overloaded by child classes, different vehicle types would have different movement patterns
     virtual void servo_test() = 0;
 
+    // write to a swash servo. output value is pwm
+    void rc_write_swash(uint8_t chan, float swash_in);
+    
     // flags bitmask
     struct heliflags_type {
         uint8_t landing_collective      : 1;    // true if collective is setup for landing which has much higher minimum

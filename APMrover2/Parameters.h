@@ -2,6 +2,10 @@
 
 #include <AP_Common/AP_Common.h>
 
+#include "RC_Channel.h"
+#include "AC_Sprayer/AC_Sprayer.h"
+#include "AP_Rally.h"
+
 // Global parameter class.
 //
 class Parameters {
@@ -15,13 +19,12 @@ public:
     // by newer code.
     //
     static const uint16_t k_format_version = 16;
-    static const uint16_t k_software_type = 20;
 
     enum {
         // Layout version number, always key zero.
         //
         k_param_format_version = 0,
-        k_param_software_type,
+        k_param_software_type, // unused
         k_param_BoardConfig_CAN,
 
         // Misc
@@ -103,7 +106,7 @@ public:
         k_param_crosstrack_gain = 150,  // unused
         k_param_crosstrack_entry_angle, // unused
         k_param_speed_cruise,
-        k_param_speed_turn_gain,
+        k_param_speed_turn_gain,    // unused
         k_param_speed_turn_dist,    // unused
         k_param_ch7_option,
         k_param_auto_trigger_pin,
@@ -160,7 +163,7 @@ public:
         k_param_mode4,
         k_param_mode5,
         k_param_mode6,
-        k_param_aux_channel,
+        k_param_aux_channel_old,
 
         //
         // 220: Waypoint data
@@ -200,6 +203,7 @@ public:
         k_param_barometer,
         k_param_notify,
         k_param_button,
+        k_param_osd,
 
         k_param_DataFlash = 253,  // Logging Group
 
@@ -207,7 +211,6 @@ public:
         };
 
     AP_Int16    format_version;
-    AP_Int8     software_type;
 
     // Misc
     //
@@ -227,7 +230,6 @@ public:
     // navigation parameters
     //
     AP_Float    speed_cruise;
-    AP_Int8     speed_turn_gain;
     AP_Int8     ch7_option;
     AP_Int8     auto_trigger_pin;
     AP_Float    auto_kickstart;
@@ -264,7 +266,6 @@ public:
     AP_Int8     mode4;
     AP_Int8     mode5;
     AP_Int8     mode6;
-    AP_Int8     aux_channel;
 
     // Waypoints
     //
@@ -293,7 +294,7 @@ public:
     AP_Int8 sysid_enforce;
 
     // RC input channels
-    RC_Channels rc_channels;
+    RC_Channels_Rover rc_channels;
 
     // control over servo output ranges
     SRV_Channels servo_channels;
@@ -313,6 +314,7 @@ public:
 
     // wheel encoders
     AP_WheelEncoder wheel_encoder;
+    AP_WheelRateControl wheel_rate_control;
 
     // steering and throttle controller
     AR_AttitudeControl attitude_control;
@@ -341,6 +343,30 @@ public:
 
     // avoidance library
     AC_Avoid avoid;
+
+    // pivot turn rate
+    AP_Int16 pivot_turn_rate;
+
+    // pitch angle at 100% throttle
+    AP_Float bal_pitch_max;
+
+    // pitch/roll angle for crash check
+    AP_Int8 crash_angle;
+
+    // follow mode library
+    AP_Follow follow;
+
+    // frame type for vehicle (used for vectored motor vehicles and custom motor configs)
+    AP_Int8 frame_type;
+
+    // loiter type
+    AP_Int8 loit_type;
+
+    // Sprayer
+    AC_Sprayer sprayer;
+
+    // Rally point library
+    AP_Rally_Rover rally;
 };
 
 extern const AP_Param::Info var_info[];

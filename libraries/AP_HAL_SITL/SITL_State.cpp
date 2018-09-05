@@ -66,9 +66,6 @@ void SITL_State::_sitl_setup(const char *home_str)
 #if !defined(__CYGWIN__) && !defined(__CYGWIN64__)
     _parent_pid = getppid();
 #endif
-    _rcout_addr.sin_family = AF_INET;
-    _rcout_addr.sin_port = htons(_rcout_port);
-    inet_pton(AF_INET, _fdm_address, &_rcout_addr.sin_addr);
 
 #ifndef HIL_MODE
     _setup_fdm();
@@ -76,12 +73,12 @@ void SITL_State::_sitl_setup(const char *home_str)
     fprintf(stdout, "Starting SITL input\n");
 
     // find the barometer object if it exists
-    _sitl = (SITL::SITL *)AP_Param::find_object("SIM_");
-    _barometer = (AP_Baro *)AP_Param::find_object("GND_");
-    _ins = (AP_InertialSensor *)AP_Param::find_object("INS_");
-    _compass = (Compass *)AP_Param::find_object("COMPASS_");
+    _sitl = AP::sitl();
+    _barometer = AP_Baro::get_instance();
+    _ins = AP_InertialSensor::get_instance();
+    _compass = Compass::get_singleton();
 #if AP_TERRAIN_AVAILABLE
-    _terrain = (AP_Terrain *)AP_Param::find_object("TERRAIN_");
+    _terrain = reinterpret_cast<AP_Terrain *>(AP_Param::find_object("TERRAIN_"));
 #endif
 
     if (_sitl != nullptr) {
@@ -95,8 +92,12 @@ void SITL_State::_sitl_setup(const char *home_str)
             gimbal = new SITL::Gimbal(_sitl->state);
         }
 
+        sitl_model->set_sprayer(&_sitl->sprayer_sim);
+        sitl_model->set_gripper_servo(&_sitl->gripper_sim);
+        sitl_model->set_gripper_epm(&_sitl->gripper_epm_sim);
+
         if (_use_fg_view) {
-            fg_socket.connect("127.0.0.1", _fg_view_port);
+            fg_socket.connect(_fg_address, _fg_view_port);
         }
 
         fprintf(stdout, "Using Irlock at port : %d\n", _irlock_port);
@@ -118,11 +119,12 @@ void SITL_State::_setup_fdm(void)
 {
     if (!_sitl_rc_in.bind("0.0.0.0", _rcin_port)) {
         fprintf(stderr, "SITL: socket bind failed on RC in port : %d - %s\n", _rcin_port, strerror(errno));
-        fprintf(stderr, "Abording launch...\n");
+        fprintf(stderr, "Aborting launch...\n");
         exit(1);
     }
     _sitl_rc_in.reuseaddress();
     _sitl_rc_in.set_blocking(false);
+    _sitl_rc_in.set_cloexec();
 }
 #endif
 
@@ -187,7 +189,11 @@ void SITL_State::_fdm_input_step(void)
 void SITL_State::wait_clock(uint64_t wait_time_usec)
 {
     while (AP_HAL::micros64() < wait_time_usec) {
-        _fdm_input_step();
+        if (hal.scheduler->in_main_thread()) {
+            _fdm_input_step();
+        } else {
+            usleep(1000);
+        }
     }
 }
 
@@ -276,7 +282,7 @@ void SITL_State::_output_to_flightgear(void)
  */
 void SITL_State::_fdm_input_local(void)
 {
-    SITL::Aircraft::sitl_input input;
+    struct sitl_input input;
 
     // check for direct RC input
     _check_rc_input();
@@ -334,7 +340,7 @@ void SITL_State::_fdm_input_local(void)
 /*
   create sitl_input structure for sending to FDM
  */
-void SITL_State::_simulator_servos(SITL::Aircraft::sitl_input &input)
+void SITL_State::_simulator_servos(struct sitl_input &input)
 {
     static uint32_t last_update_usec;
 
@@ -359,23 +365,39 @@ void SITL_State::_simulator_servos(SITL::Aircraft::sitl_input &input)
     uint32_t now = AP_HAL::micros();
     last_update_usec = now;
 
-    // pass wind into simulators, using a wind gradient below 60m
     float altitude = _barometer?_barometer->get_altitude():0;
     float wind_speed = 0;
     float wind_direction = 0;
     float wind_dir_z = 0;
-    if (_sitl) {
+
+    // give 5 seconds to calibrate airspeed sensor at 0 wind speed
+    if (wind_start_delay_micros == 0) {
+        wind_start_delay_micros = now;
+    } else if (_sitl && (now - wind_start_delay_micros) > 5000000 ) {
         // The EKF does not like step inputs so this LPF keeps it happy.
         wind_speed =     _sitl->wind_speed_active     = (0.95f*_sitl->wind_speed_active)     + (0.05f*_sitl->wind_speed);
         wind_direction = _sitl->wind_direction_active = (0.95f*_sitl->wind_direction_active) + (0.05f*_sitl->wind_direction);
         wind_dir_z =     _sitl->wind_dir_z_active     = (0.95f*_sitl->wind_dir_z_active)     + (0.05f*_sitl->wind_dir_z);
-    }
+        
+        // pass wind into simulators using different wind types via param SIM_WIND_T*.
+        switch (_sitl->wind_type) {
+        case SITL::SITL::WIND_TYPE_SQRT:
+            if (altitude < _sitl->wind_type_alt) {
+                wind_speed *= sqrtf(MAX(altitude / _sitl->wind_type_alt, 0));
+            }
+            break;
 
-    if (altitude < 0) {
-        altitude = 0;
-    }
-    if (altitude < 60) {
-        wind_speed *= sqrtf(MAX(altitude / 60, 0));
+        case SITL::SITL::WIND_TYPE_COEF:
+            wind_speed += (altitude - _sitl->wind_type_alt) * _sitl->wind_type_coef;
+            break;
+
+        case SITL::SITL::WIND_TYPE_NO_LIMIT:
+        default:
+            break;
+        }
+
+        // never allow negative wind velocity
+        wind_speed = MAX(wind_speed, 0);
     }
 
     input.wind.speed = wind_speed;
@@ -410,7 +432,7 @@ void SITL_State::_simulator_servos(SITL::Aircraft::sitl_input &input)
     } else if (_vehicle == APMrover2) {
         input.servos[2] = static_cast<uint16_t>(constrain_int16(input.servos[2], 1000, 2000));
         input.servos[0] = static_cast<uint16_t>(constrain_int16(input.servos[0], 1000, 2000));
-        motors_on = ((input.servos[2] - 1500) / 500.0f) != 0;
+        motors_on = !is_zero(((input.servos[2] - 1500) / 500.0f));
     } else {
         motors_on = false;
         // run checks on each motor
@@ -486,7 +508,7 @@ void SITL_State::set_height_agl(void)
 {
     static float home_alt = -1;
 
-    if (home_alt == -1 && _sitl->state.altitude > 0) {
+    if (is_equal(home_alt, -1.0f) && _sitl->state.altitude > 0) {
         // remember home altitude as first non-zero altitude
         home_alt = _sitl->state.altitude;
     }

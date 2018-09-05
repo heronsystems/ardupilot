@@ -29,17 +29,24 @@ public:
     // you must have setup_motors before calling this
     void                set_update_rate(uint16_t speed_hz);
 
-    // output_test - spin a motor at the pwm value specified
+    // output_test_seq - spin a motor at the pwm value specified
     //  motor_seq is the motor's sequence number from 1 to the number of motors on the frame
     //  pwm value is an actual pwm value that will be output, normally in the range of 1000 ~ 2000
-    void                output_test(uint8_t motor_seq, int16_t pwm);
+    virtual void        output_test_seq(uint8_t motor_seq, int16_t pwm) override;
+
+    // output_test_num - spin a motor connected to the specified output channel
+    //  (should only be performed during testing)
+    //  If a motor output channel is remapped, the mapped channel is used.
+    //  Returns true if motor output is set, false otherwise
+    //  pwm value is an actual pwm value that will be output, normally in the range of 1000 ~ 2000
+    bool                output_test_num(uint8_t motor, int16_t pwm);
 
     // output_to_motors - sends minimum values out to the motors
     void                output_to_motors();
 
     // get_motor_mask - returns a bitmask of which outputs are being used for motors (1 means being used)
     //  this can be used to ensure other pwm outputs (i.e. for servos) do not conflict
-    uint16_t            get_motor_mask();
+    uint16_t            get_motor_mask() override;
 
 protected:
     // output - sends commands to the motors
@@ -65,7 +72,7 @@ protected:
 
     // call vehicle supplied thrust compensation if set
     void                thrust_compensation(void) override;
-    
+
     float               _roll_factor[AP_MOTORS_MAX_NUM_MOTORS]; // each motors contribution to roll
     float               _pitch_factor[AP_MOTORS_MAX_NUM_MOTORS]; // each motors contribution to pitch
     float               _yaw_factor[AP_MOTORS_MAX_NUM_MOTORS];  // each motors contribution to yaw (normally 1 or -1)

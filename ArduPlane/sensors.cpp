@@ -1,11 +1,6 @@
 #include "Plane.h"
 #include <AP_RSSI/AP_RSSI.h>
 
-void Plane::init_rangefinder(void)
-{
-    rangefinder.init();
-}
-
 /*
   read the rangefinder and update height estimate
  */
@@ -73,7 +68,7 @@ void Plane::read_airspeed(void)
     if (airspeed.enabled()) {
         airspeed.read();
         if (should_log(MASK_LOG_IMU)) {
-            Log_Write_Airspeed();
+            DataFlash.Log_Write_Airspeed(airspeed);
         }
 
         // supply a new temperature to the barometer from the digital
@@ -96,13 +91,6 @@ void Plane::read_airspeed(void)
     }
 }
 
-// read the receiver RSSI as an 8 bit number for MAVLink
-// RC_CHANNELS_SCALED message
-void Plane::read_receiver_rssi(void)
-{
-    receiver_rssi = rssi.read_receiver_rssi_uint8();
-}
-
 /*
   update RPM sensors
  */
@@ -116,21 +104,6 @@ void Plane::rpm_update(void)
     }
 }
 
-/*
-  update AP_Button
- */
-void Plane::button_update(void)
-{
-    g2.button.update();
-}
-
-/*
-  update AP_ICEngine
- */
-void Plane::ice_update(void)
-{
-    g2.ice_control.update();
-}
 // update error mask of sensors and subsystems. The mask
 // uses the MAV_SYS_STATUS_* values from mavlink. If a bit is set
 // then it indicates that the sensor or subsystem is present but

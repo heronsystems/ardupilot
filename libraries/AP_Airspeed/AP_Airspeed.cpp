@@ -13,10 +13,9 @@
    along with this program.  If not, see <http://www.gnu.org/licenses/>.
  */
 /*
- *   APM_Airspeed.cpp - airspeed (pitot) driver
+ *   AP_Airspeed.cpp - airspeed (pitot) driver
  */
 
-#include <AP_ADC/AP_ADC.h>
 #include <AP_Common/AP_Common.h>
 #include <AP_HAL/AP_HAL.h>
 #include <AP_HAL/I2CDevice.h>
@@ -28,8 +27,12 @@
 #include "AP_Airspeed_MS4525.h"
 #include "AP_Airspeed_MS5525.h"
 #include "AP_Airspeed_SDP3X.h"
+#include "AP_Airspeed_DLVR.h"
 #include "AP_Airspeed_analog.h"
 #include "AP_Airspeed_Backend.h"
+#if HAL_WITH_UAVCAN
+#include "AP_Airspeed_UAVCAN.h"
+#endif
 
 extern const AP_HAL::HAL &hal;
 
@@ -55,7 +58,7 @@ const AP_Param::GroupInfo AP_Airspeed::var_info[] = {
     // @Param: _TYPE
     // @DisplayName: Airspeed type
     // @Description: Type of airspeed sensor
-    // @Values: 0:None,1:I2C-MS4525D0,2:Analog,3:I2C-MS5525,4:I2C-MS5525 (0x76),5:I2C-MS5525 (0x77),6:I2C-SDP3X
+    // @Values: 0:None,1:I2C-MS4525D0,2:Analog,3:I2C-MS5525,4:I2C-MS5525 (0x76),5:I2C-MS5525 (0x77),6:I2C-SDP3X,7:I2C-DLVR,8:UAVCAN
     // @User: Standard
     AP_GROUPINFO_FLAGS("_TYPE", 0, AP_Airspeed, param[0].type, ARSPD_DEFAULT_TYPE, AP_PARAM_FLAG_ENABLE),
 
@@ -88,7 +91,7 @@ const AP_Param::GroupInfo AP_Airspeed::var_info[] = {
 
     // @Param: _AUTOCAL
     // @DisplayName: Automatic airspeed ratio calibration
-    // @Description: If this is enabled then the APM will automatically adjust the ARSPD_RATIO during flight, based upon an estimation filter using ground speed and true airspeed. The automatic calibration will save the new ratio to EEPROM every 2 minutes if it changes by more than 5%. This option should be enabled for a calibration flight then disabled again when calibration is complete. Leaving it enabled all the time is not recommended.
+    // @Description: If this is enabled then the autopilot will automatically adjust the ARSPD_RATIO during flight, based upon an estimation filter using ground speed and true airspeed. The automatic calibration will save the new ratio to EEPROM every 2 minutes if it changes by more than 5%. This option should be enabled for a calibration flight then disabled again when calibration is complete. Leaving it enabled all the time is not recommended.
     // @User: Advanced
     AP_GROUPINFO("_AUTOCAL",  5, AP_Airspeed, param[0].autocal, 0),
 
@@ -128,7 +131,7 @@ const AP_Param::GroupInfo AP_Airspeed::var_info[] = {
     // @Param: 2_TYPE
     // @DisplayName: Second Airspeed type
     // @Description: Type of 2nd airspeed sensor
-    // @Values: 0:None,1:I2C-MS4525D0,2:Analog,3:I2C-MS5525,4:I2C-MS5525 (0x76),5:I2C-MS5525 (0x77),6:I2C-SDP3X
+    // @Values: 0:None,1:I2C-MS4525D0,2:Analog,3:I2C-MS5525,4:I2C-MS5525 (0x76),5:I2C-MS5525 (0x77),6:I2C-SDP3X,7:I2C-DLVR,8:UAVCAN
     // @User: Standard
     AP_GROUPINFO_FLAGS("2_TYPE", 11, AP_Airspeed, param[1].type, 0, AP_PARAM_FLAG_ENABLE),
 
@@ -161,7 +164,7 @@ const AP_Param::GroupInfo AP_Airspeed::var_info[] = {
 
     // @Param: 2_AUTOCAL
     // @DisplayName: Automatic airspeed ratio calibration for 2nd airspeed sensor
-    // @Description: If this is enabled then the APM will automatically adjust the ARSPD_RATIO during flight, based upon an estimation filter using ground speed and true airspeed. The automatic calibration will save the new ratio to EEPROM every 2 minutes if it changes by more than 5%. This option should be enabled for a calibration flight then disabled again when calibration is complete. Leaving it enabled all the time is not recommended.
+    // @Description: If this is enabled then the autopilot will automatically adjust the ARSPD_RATIO during flight, based upon an estimation filter using ground speed and true airspeed. The automatic calibration will save the new ratio to EEPROM every 2 minutes if it changes by more than 5%. This option should be enabled for a calibration flight then disabled again when calibration is complete. Leaving it enabled all the time is not recommended.
     // @User: Advanced
     AP_GROUPINFO("2_AUTOCAL",  16, AP_Airspeed, param[1].autocal, 0),
 
@@ -249,7 +252,18 @@ void AP_Airspeed::init()
         case TYPE_I2C_SDP3X:
             sensor[i] = new AP_Airspeed_SDP3X(*this, i);
             break;
+        case TYPE_I2C_DLVR:
+#if !HAL_MINIMIZE_FEATURES
+            sensor[i] = new AP_Airspeed_DLVR(*this, i);
+#endif // !HAL_MINIMIZE_FEATURES
+            break;
+        case TYPE_UAVCAN:
+#if HAL_WITH_UAVCAN
+            sensor[i] = AP_Airspeed_UAVCAN::probe(*this, i);
+#endif
+            break;
         }
+
         if (sensor[i] && !sensor[i]->init()) {
             gcs().send_text(MAV_SEVERITY_INFO, "Airspeed[%u] init failed", i);
             delete sensor[i];
@@ -347,6 +361,7 @@ void AP_Airspeed::read(uint8_t i)
     if (!enabled(i) || !sensor[i]) {
         return;
     }
+    bool prev_healthy = state[i].healthy;
     float raw_pressure = get_pressure(i);
     if (state[i].cal.start_ms != 0) {
         update_calibration(i, raw_pressure);
@@ -358,7 +373,14 @@ void AP_Airspeed::read(uint8_t i)
     state[i].corrected_pressure = airspeed_pressure;
 
     // filter before clamping positive
-    state[i].filtered_pressure = 0.7f * state[i].filtered_pressure + 0.3f * airspeed_pressure;
+    if (!prev_healthy) {
+        // if the previous state was not healthy then we should not
+        // use an IIR filter, otherwise a bad reading will last for
+        // some time after the sensor becomees healthy again
+        state[i].filtered_pressure = airspeed_pressure;
+    } else {
+        state[i].filtered_pressure = 0.7f * state[i].filtered_pressure + 0.3f * airspeed_pressure;
+    }
 
     /*
       we support different pitot tube setups so user can choose if
@@ -401,7 +423,7 @@ void AP_Airspeed::read(void)
 #if 1
     // debugging until we get MAVLink support for 2nd airspeed sensor
     if (enabled(1)) {
-        mavlink_msg_named_value_float_send(MAVLINK_COMM_0, AP_HAL::millis(), "AS2", get_airspeed(1));
+        gcs().send_named_float("AS2", get_airspeed(1));
     }
 #endif
 

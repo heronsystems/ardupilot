@@ -2,25 +2,13 @@ language: cpp
 sudo: false
 
 addons:
-  coverity_scan:
-    project:
-      name: "diydrones/ardupilot"
-      description: "Build submitted via Travis CI"
-    notification_email: andrew-scan@tridgell.net
-    build_command_prepend: "make clean"
-    build_command:   "make"
-    branch_pattern: coverity_scan
-    
   apt:
     sources:
-      - sourceline: 'ppa:george-edison55/cmake-3.x'
       - ubuntu-toolchain-r-test
-#      - george-edison55-cmake-3.x
 #      - llvm-toolchain-precise-3.7
     packages:
       - build-essential
       - gawk
-      - ccache
       - genromfs
       - libc6-i386
       - libxml2-dev
@@ -30,13 +18,13 @@ addons:
       - zlib1g-dev
       - gcc-4.9
       - g++-4.9
-      - cmake
-      - cmake-data
+      - cmake3
+      - cmake3-data
 #      - clang-3.7
 #      - llvm-3.7
 
 cache:
-  ccache: true
+  ccache: false
   directories:
     - $HOME/opt
 
@@ -45,15 +33,7 @@ before_install:
   - if [ "$TRAVIS_EVENT_TYPE" = "cron" ]; then export CI_CRON_JOB=1 ; fi
 
 script:
-  - python Tools/autotest/param_metadata/param_parse.py --no-emit --vehicle APMrover2
-  - python Tools/autotest/param_metadata/param_parse.py --no-emit --vehicle AntennaTracker
-  - python Tools/autotest/param_metadata/param_parse.py --no-emit --vehicle ArduCopter
-  - python Tools/autotest/param_metadata/param_parse.py --no-emit --vehicle ArduPlane
-  - python Tools/autotest/param_metadata/param_parse.py --no-emit --vehicle ArduSub
   - Tools/scripts/build_ci.sh
-
-before_cache:
-  - ccache -z
 
 notifications:
   webhooks:
@@ -76,11 +56,14 @@ env:
 matrix:
   fast_finish: true
   include:
+    - if: type != cron
+      compiler: "gcc"
+      env: CI_BUILD_TARGET="px4-v2 revo-bootloader"
     - compiler: "gcc"
-      env: CI_BUILD_TARGET="px4-v2"
-    - compiler: "gcc"
-      env: CI_BUILD_TARGET="px4-v4"
-    - compiler: "gcc"
+      env: CI_BUILD_TARGET="px4-v4 revo-mini"
+    - if: type != cron
+      compiler: "gcc"
       env: CI_BUILD_TARGET="sitltest-copter"
-    - compiler: "gcc"
-      env: CI_BUILD_TARGET="sitltest-quadplane sitltest-rover"
+    - if: type != cron
+      compiler: "gcc"
+      env: CI_BUILD_TARGET="sitltest-quadplane sitltest-plane sitltest-rover"

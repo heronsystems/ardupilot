@@ -56,6 +56,11 @@ public:
     Compass(const Compass &other) = delete;
     Compass &operator=(const Compass&) = delete;
 
+    // get singleton instance
+    static Compass *get_singleton() {
+        return _singleton;
+    }
+
     friend class CompassLearn;
 
     /// Initialize the compass device.
@@ -68,10 +73,6 @@ public:
     /// Read the compass and update the mag_ variables.
     ///
     bool read();
-
-    /// use spare CPU cycles to accumulate values from the compass if
-    /// possible (this method should also be implemented in the backends)
-    void accumulate();
 
     /// Calculate the tilt-compensated heading_ variables.
     ///
@@ -135,7 +136,7 @@ public:
 
     void cancel_calibration_all();
 
-    bool compass_cal_requires_reboot() { return _cal_complete_requires_reboot; }
+    bool compass_cal_requires_reboot() const { return _cal_complete_requires_reboot; }
     bool is_calibrating() const;
 
     /*
@@ -205,8 +206,9 @@ public:
     float get_declination() const;
 
     // set overall board orientation
-    void set_board_orientation(enum Rotation orientation) {
+    void set_board_orientation(enum Rotation orientation, Matrix3f* custom_rotation = nullptr) {
         _board_orientation = orientation;
+        _custom_rotation = custom_rotation;
     }
 
     /// Set the motor compensation type
@@ -322,7 +324,10 @@ public:
         return (uint16_t)_offset_max.get();
     }
 
+    uint8_t get_filter_range() const { return uint8_t(_filter_range.get()); }
+
 private:
+    static Compass *_singleton;
     /// Register a new compas driver, allocating an instance number
     ///
     /// @return number of compass instances
@@ -330,6 +335,7 @@ private:
 
     // load backend drivers
     bool _add_backend(AP_Compass_Backend *backend, const char *name, bool external);
+    void _probe_external_i2c_compasses(void);
     void _detect_backends(void);
 
     // compass cal
@@ -342,9 +348,8 @@ private:
     bool _start_calibration_mask(uint8_t mask, bool retry=false, bool autosave=false, float delay_sec=0.0f, bool autoreboot=false);
     bool _auto_reboot() { return _compass_cal_autoreboot; }
 
-    // see if we already have probed a driver by bus type
-    bool _have_driver(AP_HAL::Device::BusType bus_type, uint8_t bus_num, uint8_t address, uint8_t devtype) const;
-
+    // see if we already have probed a i2c driver by bus number and address
+    bool _have_i2c_driver(uint8_t bus_num, uint8_t address) const;
 
     //keep track of which calibrators have been saved
     bool _cal_saved[COMPASS_MAX_INSTANCES];
@@ -367,7 +372,6 @@ private:
         DRIVER_IST8310  =7,
         DRIVER_ICM20948 =8,
         DRIVER_MMC3416  =9,
-        DRIVER_QFLIGHT  =10,
         DRIVER_UAVCAN   =11,
         DRIVER_QMC5883  =12,
         DRIVER_SITL     =13,
@@ -387,7 +391,8 @@ private:
     AP_Int8 _learn;
 
     // board orientation from AHRS
-    enum Rotation _board_orientation;
+    enum Rotation _board_orientation = ROTATION_NONE;
+    Matrix3f* _custom_rotation;
 
     // primary instance
     AP_Int8     _primary;
@@ -408,6 +413,9 @@ private:
     // 0 = disabled, 1 = enabled for throttle, 2 = enabled for current
     AP_Int8     _motor_comp_type;
 
+    // automatic compass orientation on calibration
+    AP_Int8     _rotate_auto;
+    
     // throttle expressed as a percentage from 0 ~ 1.0, used for motor compensation
     float       _thr;
 
@@ -423,6 +431,8 @@ private:
         // saved to eeprom when offsets are saved allowing ram &
         // eeprom values to be compared as consistency check
         AP_Int32    dev_id;
+        AP_Int32    expected_dev_id;
+        int32_t detected_dev_id;
 
         AP_Int8     use_for_yaw;
 
@@ -460,4 +470,10 @@ private:
 
     // mask of driver types to not load. Bit positions match DEVTYPE_ in backend
     AP_Int32 _driver_type_mask;
+    
+    AP_Int8 _filter_range;
+};
+
+namespace AP {
+    Compass &compass();
 };

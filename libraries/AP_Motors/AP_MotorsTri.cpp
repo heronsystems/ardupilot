@@ -109,10 +109,16 @@ void AP_MotorsTri::output_to_motors()
 uint16_t AP_MotorsTri::get_motor_mask()
 {
     // tri copter uses channels 1,2,4 and 7
-    return rc_map_mask((1U << AP_MOTORS_MOT_1) |
-                       (1U << AP_MOTORS_MOT_2) |
-                       (1U << AP_MOTORS_MOT_4) |
-                       (1U << AP_MOTORS_CH_TRI_YAW));
+    uint16_t motor_mask = (1U << AP_MOTORS_MOT_1) |
+                          (1U << AP_MOTORS_MOT_2) |
+                          (1U << AP_MOTORS_MOT_4) |
+                          (1U << AP_MOTORS_CH_TRI_YAW);
+    uint16_t mask = rc_map_mask(motor_mask);
+
+    // add parent's mask
+    mask |= AP_MotorsMulticopter::get_motor_mask();
+
+    return mask;
 }
 
 // output_armed - sends commands to the motors
@@ -241,10 +247,10 @@ void AP_MotorsTri::output_armed_stabilizing()
     _thrust_rear = constrain_float(_thrust_rear, 0.0f, 1.0f);
 }
 
-// output_test - spin a motor at the pwm value specified
+// output_test_seq - spin a motor at the pwm value specified
 //  motor_seq is the motor's sequence number from 1 to the number of motors on the frame
 //  pwm value is an actual pwm value that will be output, normally in the range of 1000 ~ 2000
-void AP_MotorsTri::output_test(uint8_t motor_seq, int16_t pwm)
+void AP_MotorsTri::output_test_seq(uint8_t motor_seq, int16_t pwm)
 {
     // exit immediately if not armed
     if (!armed()) {

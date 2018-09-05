@@ -35,33 +35,18 @@ public:
 
     void update_pre_arm_check();
 
-    uint8_t instance() const { return state.instance; }
     enum Rotation orientation() const { return (Rotation)state.orientation.get(); }
     uint16_t distance_cm() const { return state.distance_cm; }
     uint16_t voltage_mv() const { return state.voltage_mv; }
     int16_t max_distance_cm() const { return state.max_distance_cm; }
     int16_t min_distance_cm() const { return state.min_distance_cm; }
     int16_t ground_clearance_cm() const { return state.ground_clearance_cm; }
-    MAV_DISTANCE_SENSOR get_mav_distance_sensor_type() const {
-        if (state.type == RangeFinder::RangeFinder_TYPE_NONE) {
-            return MAV_DISTANCE_SENSOR_UNKNOWN;
-        }
-        return _get_mav_distance_sensor_type();
-    }
-    RangeFinder::RangeFinder_Status status() const {
-        if (state.type == RangeFinder::RangeFinder_TYPE_NONE) {
-            // turned off at runtime?
-            return RangeFinder::RangeFinder_NotConnected;
-        }
-        return state.status;
-    }
+    MAV_DISTANCE_SENSOR get_mav_distance_sensor_type() const;
+    RangeFinder::RangeFinder_Status status() const;
     RangeFinder::RangeFinder_Type type() const { return (RangeFinder::RangeFinder_Type)state.type.get(); }
 
     // true if sensor is returning data
-    bool has_data() const {
-        return ((state.status != RangeFinder::RangeFinder_NotConnected) &&
-                (state.status != RangeFinder::RangeFinder_NoData));
-    }
+    bool has_data() const;
 
     // returns count of consecutive good readings
     uint8_t range_valid_count() const { return state.range_valid_count; }
@@ -69,6 +54,9 @@ public:
     // return a 3D vector defining the position offset of the sensor
     // in metres relative to the body frame origin
     const Vector3f &get_pos_offset() const { return state.pos_offset; }
+
+    // return system time of last successful read from the sensor
+    uint32_t last_reading_ms() const { return state.last_reading_ms; }
 
 protected:
 

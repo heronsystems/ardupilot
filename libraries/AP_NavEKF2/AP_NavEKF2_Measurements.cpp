@@ -362,7 +362,7 @@ void NavEKF2_core::readIMUData()
         // reset the counter used to let the frontend know how many frames have elapsed since we started a new update cycle
         framesSincePredict = 0;
 
-        // set the flag to let the filter know it has new IMU data nad needs to run
+        // set the flag to let the filter know it has new IMU data and needs to run
         runUpdates = true;
 
         // extract the oldest available data from the FIFO buffer
@@ -423,9 +423,12 @@ void NavEKF2_core::readGpsData()
             // get current fix time
             lastTimeGpsReceived_ms = gps.last_message_time_ms();
 
+
             // estimate when the GPS fix was valid, allowing for GPS processing and other delays
             // ideally we should be using a timing signal from the GPS receiver to set this time
-            gpsDataNew.time_ms = lastTimeGpsReceived_ms - frontend->_gpsDelay_ms;
+            float gps_delay = 0.0;
+            gps.get_lag(gps_delay); // ignore the return value
+            gpsDataNew.time_ms = lastTimeGpsReceived_ms - (uint32_t)(1e3f * gps_delay);
 
             // Correct for the average intersampling delay due to the filter updaterate
             gpsDataNew.time_ms -= localFilterTimeStep_ms/2;
@@ -494,7 +497,7 @@ void NavEKF2_core::readGpsData()
             // Post-alignment checks
             calcGpsGoodForFlight();
 
-            // Read the GPS locaton in WGS-84 lat,long,height coordinates
+            // Read the GPS location in WGS-84 lat,long,height coordinates
             const struct Location &gpsloc = gps.location();
 
             // Set the EKF origin and magnetic field declination if not previously set  and GPS checks have passed
@@ -508,7 +511,7 @@ void NavEKF2_core::readGpsData()
                 // Set the height of the NED origin
                 ekfGpsRefHgt = (double)0.01 * (double)gpsloc.alt + (double)outputDataNew.position.z;
 
-                // Set the uncertinty of the GPS origin height
+                // Set the uncertainty of the GPS origin height
                 ekfOriginHgtVar = sq(gpsHgtAccuracy);
 
             }

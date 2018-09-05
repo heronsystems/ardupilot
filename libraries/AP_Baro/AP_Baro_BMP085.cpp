@@ -15,6 +15,7 @@
 #include "AP_Baro_BMP085.h"
 
 #include <utility>
+#include <stdio.h>
 
 #include <AP_Common/AP_Common.h>
 #include <AP_HAL/AP_HAL.h>
@@ -202,9 +203,9 @@ void AP_Baro_BMP085::_timer(void)
  */
 void AP_Baro_BMP085::update(void)
 {
-    if (_sem->take_nonblocking()) {
+    if (_sem.take_nonblocking()) {
         if (!_has_sample) {
-            _sem->give();
+            _sem.give();
             return;
         }
 
@@ -212,7 +213,7 @@ void AP_Baro_BMP085::update(void)
         float pressure = _pressure_filter.getf();
 
         _copy_to_frontend(_instance, pressure, temperature);
-        _sem->give();
+        _sem.give();
     }
 }
 
@@ -307,11 +308,14 @@ void AP_Baro_BMP085::_calculate()
     x2 = (-7357 * p) >> 16;
     p += ((x1 + x2 + 3791) >> 4);
 
-    if (_sem->take(HAL_SEMAPHORE_BLOCK_FOREVER)) {
-        _pressure_filter.apply(p);
-        _has_sample = true;
-        _sem->give();
+    if (!pressure_ok(p)) {
+        return;
     }
+
+    WITH_SEMAPHORE(_sem);
+
+    _pressure_filter.apply(p);
+    _has_sample = true;
 }
 
 bool AP_Baro_BMP085::_data_ready()

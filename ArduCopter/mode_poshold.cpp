@@ -155,17 +155,17 @@ void Copter::ModePosHold::run()
         target_climb_rate = constrain_float(target_climb_rate, -get_pilot_speed_dn(), g.pilot_speed_up);
 
         // get takeoff adjusted pilot and takeoff climb rates
-        takeoff_get_climb_rates(target_climb_rate, takeoff_climb_rate);
+        takeoff.get_climb_rates(target_climb_rate, takeoff_climb_rate);
 
         // check for take-off
 #if FRAME_CONFIG == HELI_FRAME
         // helicopters are held on the ground until rotor speed runup has finished
-        if (ap.land_complete && (takeoff_state.running || (target_climb_rate > 0.0f && motors->rotor_runup_complete()))) {
+        if (ap.land_complete && (takeoff.running() || (target_climb_rate > 0.0f && motors->rotor_runup_complete()))) {
 #else
-        if (ap.land_complete && (takeoff_state.running || target_climb_rate > 0.0f)) {
+        if (ap.land_complete && (takeoff.running() || target_climb_rate > 0.0f)) {
 #endif
-            if (!takeoff_state.running) {
-                takeoff_timer_start(constrain_float(g.pilot_takeoff_alt,0.0f,1000.0f));
+            if (!takeoff.running()) {
+                takeoff.start(constrain_float(g.pilot_takeoff_alt,0.0f,1000.0f));
             }
 
             // indicate we are taking off
@@ -519,10 +519,7 @@ void Copter::ModePosHold::run()
         attitude_control->input_euler_angle_roll_pitch_euler_rate_yaw(poshold.roll, poshold.pitch, target_yaw_rate);
 
         // adjust climb rate using rangefinder
-        if (copter.rangefinder_alt_ok()) {
-            // if rangefinder is ok, use surface tracking
-            target_climb_rate = get_surface_tracking_climb_rate(target_climb_rate, pos_control->get_alt_target(), G_Dt);
-        }
+        target_climb_rate = get_surface_tracking_climb_rate(target_climb_rate, pos_control->get_alt_target(), G_Dt);
 
         // get avoidance adjusted climb rate
         target_climb_rate = get_avoidance_adjusted_climbrate(target_climb_rate);

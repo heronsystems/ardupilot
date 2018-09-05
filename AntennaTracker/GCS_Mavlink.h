@@ -7,8 +7,6 @@ class GCS_MAVLINK_Tracker : public GCS_MAVLINK
 
 public:
 
-    void data_stream_send(void) override;
-
 protected:
 
     // telem_delay is not used by Tracker but is pure virtual, thus
@@ -16,19 +14,19 @@ protected:
     // as currently Tracker may brick XBees
     uint32_t telem_delay() const override { return 0; }
 
-    Compass *get_compass() const override;
     AP_Mission *get_mission() override { return nullptr; };
     AP_Rally *get_rally() const override { return nullptr; };
-    AP_Camera *get_camera() const override { return nullptr; };
-    AP_ServoRelayEvents *get_servorelayevents() const override { return nullptr; }
-    const AP_FWVersion &get_fwver() const override;
-    void set_ekf_origin(const Location& loc) override;
 
     uint8_t sysid_my_gcs() const override;
 
     bool set_mode(uint8_t mode) override;
 
     MAV_RESULT _handle_command_preflight_calibration_baro() override;
+    MAV_RESULT handle_command_long_packet(const mavlink_command_long_t &packet) override;
+
+    int32_t global_position_int_relative_alt() const {
+        return 0; // what if we have been picked up and carried somewhere?
+    }
 
 private:
 

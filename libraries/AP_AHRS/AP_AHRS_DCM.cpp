@@ -49,6 +49,9 @@ AP_AHRS_DCM::reset_gyro_drift(void)
 void
 AP_AHRS_DCM::update(bool skip_ins_update)
 {
+    // support locked access functions to AHRS data
+    WITH_SEMAPHORE(_rsem);
+    
     float delta_t;
 
     if (_last_startup_ms == 0) {
@@ -141,6 +144,9 @@ AP_AHRS_DCM::matrix_update(float _G_Dt)
 void
 AP_AHRS_DCM::reset(bool recover_eulers)
 {
+    // support locked access functions to AHRS data
+    WITH_SEMAPHORE(_rsem);
+    
     // reset the integration terms
     _omega_I.zero();
     _omega_P.zero();
@@ -436,6 +442,11 @@ AP_AHRS_DCM::drift_correction_yaw(void)
 
     const AP_GPS &_gps = AP::gps();
 
+    if (_compass && _compass->is_calibrating()) {
+        // don't do any yaw correction while calibrating
+        return;
+    }
+    
     if (AP_AHRS_DCM::use_compass()) {
         /*
           we are using compass for yaw
@@ -1012,6 +1023,7 @@ void AP_AHRS_DCM::set_home(const Location &loc)
 {
     _home = loc;
     _home.options = 0;
+    _home_is_set = true;
 }
 
 //  a relative ground position to home in meters, Down

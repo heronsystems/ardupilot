@@ -81,11 +81,14 @@ private:
     // get velocity estimate in m/s in NED frame using dt since last update
     bool get_velocity_ned(Vector3f &vel_ned, float dt) const;
 
-    // initialise offsets to provided distance vector (in meters in NED frame) if required
+    // initialise offsets to provided distance vector to other vehicle (in meters in NED frame) if required
     void init_offsets_if_required(const Vector3f &dist_vec_ned);
 
     // get offsets in meters in NED frame
     bool get_offsets_ned(Vector3f &offsets) const;
+
+    // rotate 3D vector clockwise by specified angle (in degrees)
+    Vector3f rotate_vector(const Vector3f &vec, float angle_deg) const;
 
     // parameters
     AP_Int8     _enabled;           // 1 if this subsystem is enabled
@@ -94,6 +97,7 @@ private:
     AP_Int8     _offset_type;       // offset frame type (0:North-East-Down, 1:RelativeToLeadVehicleHeading)
     AP_Vector3f _offset;            // offset from lead vehicle in meters
     AP_Int8     _yaw_behave;        // following vehicle's yaw/heading behaviour
+    AP_Int8     _alt_type;          // altitude source for follow mode
     AC_P        _p_pos;             // position error P controller
 
     // local variables

@@ -37,11 +37,9 @@
 #include <AP_Baro/AP_Baro.h>        // ArduPilot barometer library
 #include <AP_Compass/AP_Compass.h>     // ArduPilot Mega Magnetometer Library
 #include <AP_Math/AP_Math.h>        // ArduPilot Mega Vector/Matrix math Library
-#include <AP_ADC/AP_ADC.h>         // ArduPilot Mega Analog to Digital Converter Library
 #include <AP_InertialSensor/AP_InertialSensor.h> // Inertial Sensor Library
 #include <AP_AccelCal/AP_AccelCal.h>                // interface and maths for accelerometer calibration
 #include <AP_AHRS/AP_AHRS.h>         // ArduPilot Mega DCM Library
-#include <RC_Channel/RC_Channel.h>     // RC Channel Library
 #include <SRV_Channel/SRV_Channel.h>
 #include <AP_RangeFinder/AP_RangeFinder.h>     // Range finder library
 #include <Filter/Filter.h>                     // Filter library
@@ -84,6 +82,8 @@
 #include <AP_BoardConfig/AP_BoardConfig.h>
 #include <AP_BoardConfig/AP_BoardConfig_CAN.h>
 #include <AP_Frsky_Telem/AP_Frsky_Telem.h>
+#include <AP_Devo_Telem/AP_Devo_Telem.h>
+#include <AP_OSD/AP_OSD.h>
 #include <AP_ServoRelayEvents/AP_ServoRelayEvents.h>
 
 #include <AP_Rally/AP_Rally.h>
@@ -108,6 +108,7 @@
 // Local modules
 #include "defines.h"
 
+#include "RC_Channel.h"     // RC Channel Library
 #include "Parameters.h"
 #include "avoidance_adsb.h"
 #include "AP_Arming.h"
@@ -122,7 +123,7 @@
 class AP_AdvancedFailsafe_Plane : public AP_AdvancedFailsafe
 {
 public:
-    AP_AdvancedFailsafe_Plane(AP_Mission &_mission, const AP_GPS &_gps, const RCMapper &_rcmap);
+    AP_AdvancedFailsafe_Plane(AP_Mission &_mission, const AP_GPS &_gps);
 
     // called to set all outputs to termination state
     void terminate_vehicle(void);
@@ -149,6 +150,7 @@ public:
     friend class AP_AdvancedFailsafe_Plane;
     friend class AP_Avoidance_Plane;
     friend class GCS_Plane;
+    friend class RC_Channels_Plane;
 
     Plane(void);
 
@@ -157,7 +159,6 @@ public:
     void loop() override;
 
 private:
-    static const AP_FWVersion fwver;
 
     // key aircraft parameters passed to multiple libraries
     AP_Vehicle::FixedWing aparm;
@@ -221,7 +222,7 @@ private:
     AP_AHRS_DCM ahrs;
 #endif
 
-    AP_TECS TECS_controller{ahrs, aparm, landing, g2.soaring_controller};
+    AP_TECS TECS_controller{ahrs, aparm, landing};
     AP_L1_Control L1_controller{ahrs, &TECS_controller};
 
     // Attitude to servo controllers
@@ -289,6 +290,10 @@ private:
     // RSSI
     AP_RSSI rssi;
 
+#if OSD_ENABLED == ENABLED
+    AP_OSD osd;
+#endif
+    
     // This is the state of the flight control system
     // There are multiple states defined such as MANUAL, FBW-A, AUTO
     enum FlightMode control_mode = INITIALISING;
@@ -308,17 +313,6 @@ private:
 
     // This is used to enable the PX4IO override for testing
     bool px4io_override_enabled;
-
-    struct {
-        // These are trim values used for elevon control
-        // For elevons radio_in[CH_ROLL] and radio_in[CH_PITCH] are
-        // equivalent aileron and elevator, not left and right elevon
-        uint16_t trim1;
-        uint16_t trim2;
-        // These are used in the calculation of elevon1_trim and elevon2_trim
-        uint16_t ch1_temp;
-        uint16_t ch2_temp;
-    } elevon { 1500, 1500, 1500, 1500 };
 
     // Failsafe
     struct {
@@ -382,9 +376,6 @@ private:
     // 0-(throttle_max - throttle_cruise) : throttle nudge in Auto mode using top 1/2 of throttle stick travel
     int16_t throttle_nudge;
 
-    // receiver RSSI
-    uint8_t receiver_rssi;
-
     // Ground speed
     // The amount current ground speed is below min ground speed.  Centimeters per second
     int32_t groundspeed_undershoot;
@@ -400,6 +391,10 @@ private:
 #if FRSKY_TELEM_ENABLED == ENABLED
     // FrSky telemetry support
     AP_Frsky_Telem frsky_telemetry{ahrs, battery, rangefinder};
+#endif
+#if DEVO_TELEM_ENABLED == ENABLED
+    // DEVO-M telemetry support
+    AP_DEVO_Telem devo_telemetry {ahrs};
 #endif
 
     // Variables for extended status MAVLink messages
@@ -595,9 +590,6 @@ private:
     // The instantaneous desired pitch angle.  Hundredths of a degree
     int32_t nav_pitch_cd;
 
-    // we separate out rudder input to allow for RUDDER_ONLY=1
-    int16_t rudder_input;
-
     // the aerodymamic load factor. This is calculated from the demanded
     // roll before the roll is clipped, using 1/sqrt(cos(nav_roll))
     float aerodynamic_load_factor = 1.0f;
@@ -635,7 +627,7 @@ private:
     AP_Avoidance_Plane avoidance_adsb{ahrs, adsb};
 
     // Outback Challenge Failsafe Support
-    AP_AdvancedFailsafe_Plane afs {mission, gps, rcmap};
+    AP_AdvancedFailsafe_Plane afs {mission, gps};
 
     /*
       meta data to support counting the number of circles in a loiter
@@ -752,15 +744,12 @@ private:
 #endif
 
     // Arming/Disarming mangement class
-    AP_Arming_Plane arming{ahrs, compass, battery};
+    AP_Arming_Plane arming;
 
     AP_Param param_loader {var_info};
 
     static const AP_Scheduler::Task scheduler_tasks[];
     static const AP_Param::Info var_info[];
-
-    // use this to prevent recursion during sensor init
-    bool in_mavlink_delay = false;
 
     // time that rudder arming has been running
     uint32_t rudder_arm_timer;
@@ -780,16 +769,11 @@ private:
     
     void adjust_nav_pitch_throttle(void);
     void update_load_factor(void);
-    void send_attitude(mavlink_channel_t chan);
     void send_fence_status(mavlink_channel_t chan);
     void update_sensor_status_flags(void);
     void send_extended_status1(mavlink_channel_t chan);
-    void send_location(mavlink_channel_t chan);
     void send_nav_controller_output(mavlink_channel_t chan);
-    void send_position_target_global_int(mavlink_channel_t chan);
     void send_servo_out(mavlink_channel_t chan);
-    void send_vfr_hud(mavlink_channel_t chan);
-    void send_simstate(mavlink_channel_t chan);
     void send_wind(mavlink_channel_t chan);
     void send_pid_info(const mavlink_channel_t chan, const DataFlash_Class::PID_Info *pid_info, const uint8_t axis, const float achieved);
     void send_pid_tuning(mavlink_channel_t chan);
@@ -812,12 +796,7 @@ private:
     void Log_Write_Sonar();
     void Log_Write_Optflow();
     void Log_Arm_Disarm();
-    void Log_Write_GPS(uint8_t instance);
-    void Log_Write_IMU();
     void Log_Write_RC(void);
-    void Log_Write_Baro(void);
-    void Log_Write_Airspeed(void);
-    void Log_Write_Home_And_Origin();
     void Log_Write_Vehicle_Startup_Messages();
     void Log_Write_AOA_SSA();
     void Log_Write_AETR();
@@ -850,9 +829,11 @@ private:
     void rangefinder_height_update(void);
     void set_next_WP(const struct Location &loc);
     void set_guided_WP(void);
-    void init_home();
     void update_home();
-    void set_ekf_origin(const Location& loc);
+    // set home location and store it persistently:
+    void set_home_persistently(const Location &loc);
+    // set home location:
+    void set_home(const Location &loc);
     void do_RTL(int32_t alt);
     bool verify_takeoff();
     bool verify_loiter_unlim();
@@ -925,18 +906,13 @@ private:
     void init_rc_out_aux();
     void rudder_arm_disarm_check();
     void read_radio();
+    int16_t rudder_input(void);
     void control_failsafe();
-    void trim_control_surfaces();
-    void trim_radio();
-    bool rc_failsafe_active(void);
-    void init_rangefinder(void);
+    bool trim_radio();
+    bool rc_failsafe_active(void) const;
     void read_rangefinder(void);
     void read_airspeed(void);
-    void read_receiver_rssi(void);
     void rpm_update(void);
-    void button_update(void);
-    void stats_update();
-    void ice_update(void);
     void init_ardupilot();
     void startup_ground(void);
     enum FlightMode get_previous_mode();
@@ -950,7 +926,7 @@ private:
     int8_t throttle_percentage(void);
     void change_arm_state(void);
     bool disarm_motors(void);
-    bool arm_motors(AP_Arming::ArmingMethod method);
+    bool arm_motors(AP_Arming::ArmingMethod method, bool do_arming_checks=true);
     bool auto_takeoff_check(void);
     void takeoff_calc_roll(void);
     void takeoff_calc_pitch(void);
@@ -964,18 +940,13 @@ private:
     void update_compass(void);
     void update_alt(void);
     void afs_fs_check(void);
-    void compass_accumulate(void);
     void compass_cal_update();
-    void barometer_accumulate(void);
     void update_optical_flow(void);
     void one_second_loop(void);
     void airspeed_ratio_update(void);
-    void update_mount(void);
-    void update_trigger(void);    
     void compass_save(void);
     void update_logging1(void);
     void update_logging2(void);
-    void terrain_update(void);
     void avoidance_adsb_update(void);
     void update_flight_mode(void);
     void stabilize();
@@ -992,7 +963,6 @@ private:
     void servos_twin_engine_mix();
     void throttle_watt_limiter(int8_t &min_throttle, int8_t &max_throttle);
     bool allow_reverse_thrust(void);
-    void update_aux();
     void update_is_flying_5Hz(void);
     void crash_detection_update(void);
     bool in_preLaunch_flight_stage(void);
@@ -1048,17 +1018,22 @@ private:
     void notify_flight_mode(enum FlightMode mode);
     void log_init();
     void init_capabilities(void);
-    void ins_periodic();
-    void dataflash_periodic(void);
     void parachute_check();
 #if PARACHUTE == ENABLED
     void do_parachute(const AP_Mission::Mission_Command& cmd);
     void parachute_release();
     bool parachute_manual_release();
 #endif
+#if OSD_ENABLED == ENABLED
+    void publish_osd_info();
+#endif
     void accel_cal_update(void);
     void update_soft_armed();
+#if SOARING_ENABLED == ENABLED
     void update_soaring();
+#endif
+
+    void read_aux_all();
 
     // support for AP_Avoidance custom flight mode, AVOID_ADSB
     bool avoid_adsb_init(bool ignore_checks);

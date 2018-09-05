@@ -212,6 +212,8 @@ void AP_Avoidance::add_obstacle(const uint32_t obstacle_timestamp_ms,
             oldest_index = i;
         }
     }
+    WITH_SEMAPHORE(_rsem);
+    
     if (index == -1) {
         // existing obstacle not found.  See if we can store it anyway:
         if (i <_obstacles_allocated) {
@@ -312,9 +314,9 @@ float closest_approach_z(const Location &my_loc,
     if (delta_pos_d >= 0 && delta_vel_d >= 0) {
         ret = delta_pos_d;
     } else if (delta_pos_d <= 0 && delta_vel_d <= 0) {
-        ret = fabs(delta_pos_d);
+        ret = fabsf(delta_pos_d);
     } else {
-        ret = fabs(delta_pos_d - delta_vel_d * time_horizon);
+        ret = fabsf(delta_pos_d - delta_vel_d * time_horizon);
     }
 
     debug("   time_horizon: (%d)", time_horizon);
@@ -580,7 +582,7 @@ void AP_Avoidance::handle_msg(const mavlink_message_t &msg)
                             packet.vy/100.0f,
                             packet.vz/100.0f);
     add_obstacle(AP_HAL::millis(),
-                 MAV_COLLISION_SRC_ADSB,
+                 MAV_COLLISION_SRC_MAVLINK_GPS_GLOBAL_INT,
                  msg.sysid,
                  loc,
                  vel);

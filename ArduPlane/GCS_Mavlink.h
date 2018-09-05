@@ -10,8 +10,6 @@ class GCS_MAVLINK_Plane : public GCS_MAVLINK
 
 public:
 
-    void data_stream_send(void) override;
-
 protected:
 
     uint32_t telem_delay() const override;
@@ -21,20 +19,27 @@ protected:
     AP_Mission *get_mission() override;
     void handle_mission_set_current(AP_Mission &mission, mavlink_message_t *msg) override;
 
-    Compass *get_compass() const override;
-    AP_Camera *get_camera() const override;
-    AP_ServoRelayEvents *get_servorelayevents() const override;
     AP_AdvancedFailsafe *get_advanced_failsafe() const override;
     AP_Rally *get_rally() const override;
-    const AP_FWVersion &get_fwver() const override;
-    void set_ekf_origin(const Location& loc) override;
 
     uint8_t sysid_my_gcs() const override;
 
     bool set_mode(uint8_t mode) override;
+    bool should_disable_overrides_on_reboot() const override;
 
     MAV_RESULT handle_command_preflight_calibration(const mavlink_command_long_t &packet) override;
     MAV_RESULT _handle_command_preflight_calibration(const mavlink_command_long_t &packet) override;
+    MAV_RESULT handle_command_int_packet(const mavlink_command_int_t &packet) override;
+    MAV_RESULT handle_command_long_packet(const mavlink_command_long_t &packet) override;
+
+    void send_position_target_global_int() override;
+
+    virtual bool in_hil_mode() const override;
+
+    void send_attitude() const override;
+    void send_simstate() const override;
+
+    bool persist_streamrates() const override { return true; }
 
 private:
 
@@ -48,4 +53,11 @@ private:
     MAV_MODE base_mode() const override;
     uint32_t custom_mode() const override;
     MAV_STATE system_status() const override;
+
+    uint8_t radio_in_rssi() const;
+
+    float vfr_hud_airspeed() const override;
+    int16_t vfr_hud_throttle() const override;
+    float vfr_hud_climbrate() const override;
+
 };

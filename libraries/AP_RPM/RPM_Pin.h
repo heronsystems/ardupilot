@@ -15,6 +15,7 @@
 #pragma once
 
 #include "AP_RPM.h"
+
 #include "RPM_Backend.h"
 #include <Filter/Filter.h>
 #include <AP_Math/AP_Math.h>
@@ -29,9 +30,6 @@ public:
     void update(void);
 
 private:
-    static void irq_handler(uint8_t instance);
-    static int irq_handler0(int irq, void *context);
-    static int irq_handler1(int irq, void *context);
 
     ModeFilterFloat_Size5 signal_quality_filter {3};
     uint8_t last_pin = -1;
@@ -42,4 +40,9 @@ private:
         uint32_t dt_count;
     };
     static struct IrqState irq_state[RPM_MAX_INSTANCES];
+
+    void irq_handler(uint8_t pin,
+                     bool pin_state,
+                     uint32_t timestamp);
+
 };

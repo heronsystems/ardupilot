@@ -86,6 +86,10 @@ public:
     // flight. Thrust is in the range 0 to 1
     virtual void        output_motor_mask(float thrust, uint8_t mask);
 
+    // get_motor_mask - returns a bitmask of which outputs are being used for motors (1 means being used)
+    //  this can be used to ensure other pwm outputs (i.e. for servos) do not conflict
+    virtual uint16_t    get_motor_mask() override;
+
     // get minimum or maximum pwm value that can be output to motors
     int16_t             get_pwm_output_min() const;
     int16_t             get_pwm_output_max() const;
@@ -111,7 +115,7 @@ protected:
     virtual void        update_throttle_filter();
 
     // return current_limit as a number from 0 ~ 1 in the range throttle_min to throttle_max
-    float               get_current_limit_max_throttle();
+    virtual float       get_current_limit_max_throttle();
 
     // apply_thrust_curve_and_volt_scaling - returns throttle in the range 0 ~ 1
     float               apply_thrust_curve_and_volt_scaling(float thrust) const;

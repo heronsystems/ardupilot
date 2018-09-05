@@ -1,15 +1,5 @@
 #include "Tracker.h"
 
-// read the barometer and return the updated altitude in meters
-void Tracker::update_barometer(void)
-{
-    barometer.update();
-    if (should_log(MASK_LOG_IMU)) {
-        Log_Write_Baro();
-    }
-}
-
-
 /*
   update INS and attitude
  */
@@ -27,19 +17,9 @@ void Tracker::update_compass(void)
     if (g.compass_enabled && compass.read()) {
         ahrs.set_compass(&compass);
         if (should_log(MASK_LOG_COMPASS)) {
-            DataFlash.Log_Write_Compass(compass);
+            DataFlash.Log_Write_Compass();
         }
     }
-}
-
-/*
-  if the compass is enabled then try to accumulate a reading
- */
-void Tracker::compass_accumulate(void)
-{
-    if (g.compass_enabled) {
-        compass.accumulate();
-    }    
 }
 
 /*
@@ -93,25 +73,12 @@ void Tracker::update_GPS(void)
                 current_loc = gps.location();
                 set_home(current_loc);
 
-                // set system clock for log timestamps
-                uint64_t gps_timestamp = gps.time_epoch_usec();
-                
-                hal.util->set_system_clock(gps_timestamp);
-                
-                // update signing timestamp
-                GCS_MAVLINK::update_signing_timestamp(gps_timestamp);
-
                 if (g.compass_enabled) {
                     // Set compass declination automatically
                     compass.set_initial_location(gps.location().lat, gps.location().lng);
                 }
                 ground_start_count = 0;
             }
-        }
-
-        // log GPS data
-        if (should_log(MASK_LOG_GPS)) {
-            DataFlash.Log_Write_GPS(gps, 0);
         }
     }
 }

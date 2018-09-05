@@ -24,14 +24,14 @@ Copter::Mode::Mode(void) :
     channel_yaw(copter.channel_yaw),
     G_Dt(copter.G_Dt),
     ap(copter.ap),
-    takeoff_state(copter.takeoff_state),
     ekfGndSpdLimit(copter.ekfGndSpdLimit),
-    ekfNavVelGainScaler(copter.ekfNavVelGainScaler),
 #if FRAME_CONFIG == HELI_FRAME
     heli_flags(copter.heli_flags),
 #endif
-    auto_yaw_mode(copter.auto_yaw_mode)
+    ekfNavVelGainScaler(copter.ekfNavVelGainScaler)
 { };
+
+float Copter::Mode::auto_takeoff_no_nav_alt_cm = 0;
 
 // return the static controller object corresponding to supplied mode
 Copter::Mode *Copter::mode_from_mode_num(const uint8_t mode)
@@ -226,6 +226,10 @@ bool Copter::set_mode(control_mode_t mode, mode_reason_t reason)
 #if FRSKY_TELEM_ENABLED == ENABLED
     frsky_telemetry.update_control_mode(control_mode);
 #endif
+#if DEVO_TELEM_ENABLED == ENABLED
+    devo_telemetry.update_control_mode(control_mode);
+#endif
+
 #if CAMERA == ENABLED
     camera.set_is_auto_mode(control_mode == AUTO);
 #endif
@@ -243,6 +247,8 @@ void Copter::update_flight_mode()
 {
     // Update EKF speed limit - used to limit speed when we are using optical flow
     ahrs.getEkfControlLimits(ekfGndSpdLimit, ekfNavVelGainScaler);
+
+    target_rangefinder_alt_used = false;
 
     flightmode->run();
 }
@@ -276,7 +282,7 @@ void Copter::exit_mode(Copter::Mode *&old_flightmode,
     }
 
     // cancel any takeoffs in progress
-    takeoff_stop();
+    old_flightmode->takeoff_stop();
 
 #if MODE_SMARTRTL_ENABLED == ENABLED
     // call smart_rtl cleanup
@@ -348,9 +354,9 @@ void Copter::Mode::get_pilot_desired_lean_angles(float &roll_out, float &pitch_o
     // roll_out and pitch_out are returned
 }
 
-bool Copter::Mode::takeoff_triggered(const float target_climb_rate) const
+bool Copter::Mode::_TakeOff::triggered(const float target_climb_rate) const
 {
-    if (!ap.land_complete) {
+    if (!copter.ap.land_complete) {
         // can't take off if we're already flying
         return false;
     }
@@ -359,7 +365,7 @@ bool Copter::Mode::takeoff_triggered(const float target_climb_rate) const
         return false;
     }
 #if FRAME_CONFIG == HELI_FRAME
-    if (!motors->rotor_runup_complete()) {
+    if (!copter.motors->rotor_runup_complete()) {
         // hold heli on the ground until rotor speed runup has finished
         return false;
     }
@@ -399,9 +405,9 @@ int32_t Copter::Mode::get_alt_above_ground(void)
 
 void Copter::Mode::land_run_vertical_control(bool pause_descent)
 {
+#if PRECISION_LANDING == ENABLED
     AC_PrecLand &precland = copter.precland;
 
-#if PRECISION_LANDING == ENABLED
     const bool navigating = pos_control->is_active_xy();
     bool doing_precision_landing = !ap.land_repo_active && precland.target_acquired() && navigating;
 #else
@@ -445,7 +451,6 @@ void Copter::Mode::land_run_vertical_control(bool pause_descent)
 
 void Copter::Mode::land_run_horizontal_control()
 {
-    AC_PrecLand &precland = copter.precland;
     LowPassFilterFloat &rc_throttle_control_in_filter = copter.rc_throttle_control_in_filter;
     AP_Vehicle::MultiCopter &aparm = copter.aparm;
 
@@ -486,6 +491,7 @@ void Copter::Mode::land_run_horizontal_control()
     }
 
 #if PRECISION_LANDING == ENABLED
+    AC_PrecLand &precland = copter.precland;
     bool doing_precision_landing = !ap.land_repo_active && precland.target_acquired();
     // run precision landing
     if (doing_precision_landing) {
@@ -594,46 +600,6 @@ void Copter::Mode::Log_Write_Event(uint8_t id)
 void Copter::Mode::set_throttle_takeoff()
 {
     return copter.set_throttle_takeoff();
-}
-
-void Copter::Mode::set_auto_yaw_mode(uint8_t yaw_mode)
-{
-    return copter.set_auto_yaw_mode(yaw_mode);
-}
-
-void Copter::Mode::set_auto_yaw_rate(float turn_rate_cds)
-{
-    return copter.set_auto_yaw_rate(turn_rate_cds);
-}
-
-void Copter::Mode::set_auto_yaw_look_at_heading(float angle_deg, float turn_rate_dps, int8_t direction, bool relative_angle)
-{
-    return copter.set_auto_yaw_look_at_heading(angle_deg, turn_rate_dps, direction, relative_angle);
-}
-
-void Copter::Mode::takeoff_timer_start(float alt_cm)
-{
-    return copter.takeoff_timer_start(alt_cm);
-}
-
-void Copter::Mode::takeoff_stop()
-{
-    return copter.takeoff_stop();
-}
-
-void Copter::Mode::takeoff_get_climb_rates(float& pilot_climb_rate, float& takeoff_climb_rate)
-{
-    return copter.takeoff_get_climb_rates(pilot_climb_rate, takeoff_climb_rate);
-}
-
-float Copter::Mode::get_auto_heading()
-{
-    return copter.get_auto_heading();
-}
-
-float Copter::Mode::get_auto_yaw_rate_cds()
-{
-    return copter.get_auto_yaw_rate_cds();
 }
 
 float Copter::Mode::get_avoidance_adjusted_climbrate(float target_rate)

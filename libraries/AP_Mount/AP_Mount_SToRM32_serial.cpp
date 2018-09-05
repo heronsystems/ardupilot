@@ -8,11 +8,6 @@ extern const AP_HAL::HAL& hal;
 
 AP_Mount_SToRM32_serial::AP_Mount_SToRM32_serial(AP_Mount &frontend, AP_Mount::mount_state &state, uint8_t instance) :
     AP_Mount_Backend(frontend, state, instance),
-    _port(nullptr),
-    _initialised(false),
-    _last_send(0),
-    _reply_length(0),
-    _reply_counter(0),
     _reply_type(ReplyType_UNKNOWN)
 {}
 
@@ -273,11 +268,6 @@ void AP_Mount_SToRM32_serial::parse_reply() {
             _current_angle.x = _buffer.data.imu1_roll;
             _current_angle.y = _buffer.data.imu1_pitch;
             _current_angle.z = _buffer.data.imu1_yaw;
-            break;
-        case ReplyType_ACK:
-            crc = crc_calculate(&_buffer[1],
-                                sizeof(SToRM32_reply_ack_struct) - 3);
-            crc_ok = crc == _buffer.ack.crc;
             break;
         default:
             break;

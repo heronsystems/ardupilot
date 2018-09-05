@@ -16,15 +16,6 @@ public:
     //
     static const uint16_t        k_format_version = 120;
 
-    // The parameter software_type is set up solely for ground station use
-    // and identifies the software type (eg ArduPilotMega versus
-    // ArduCopterMega)
-    // GCS will interpret values 0-9 as ArduPilotMega.  Developers may use
-    // values within that range to identify different branches.
-    //
-    static const uint16_t        k_software_type = 10;          // 0 for APM
-                                                                // trunk
-
     // Parameter identities.
     //
     // The enumeration defined here is used to ensure that every parameter
@@ -48,7 +39,7 @@ public:
         // Layout version number, always key zero.
         //
         k_param_format_version = 0,
-        k_param_software_type,
+        k_param_software_type, // deprecated
         k_param_ins_old,                        // *** Deprecated, remove with next eeprom number change
         k_param_ins,                            // libraries/AP_InertialSensor variables
         k_param_NavEKF2_old, // deprecated - remove
@@ -56,6 +47,7 @@ public:
         k_param_g2, // 2nd block of parameters
         k_param_NavEKF3,
         k_param_BoardConfig_CAN,
+        k_param_osd,
 
         // simulation
         k_param_sitl = 10,
@@ -102,7 +94,7 @@ public:
         k_param_pilot_speed_up,    // renamed from k_param_pilot_velocity_z_max
         k_param_circle_rate,                // deprecated - remove
         k_param_rangefinder_gain,
-        k_param_ch8_option,
+        k_param_ch8_option_old, // deprecated
         k_param_arming_check_old,       // deprecated - remove
         k_param_sprayer,
         k_param_angle_max,
@@ -211,10 +203,10 @@ public:
         k_param_serial2_baud_old, // deprecated
         k_param_serial2_protocol, // deprecated
         k_param_serial_manager,
-        k_param_ch9_option,
-        k_param_ch10_option,
-        k_param_ch11_option,
-        k_param_ch12_option,
+        k_param_ch9_option_old,
+        k_param_ch10_option_old,
+        k_param_ch11_option_old,
+        k_param_ch12_option_old,
         k_param_takeoff_trigger_dz,
         k_param_gcs3,
         k_param_gcs_pid_mask,    // 126
@@ -241,7 +233,7 @@ public:
         k_param_frame_type,
         k_param_optflow_enabled,    // deprecated
         k_param_fs_batt_voltage,    // unused - moved to AP_BattMonitor
-        k_param_ch7_option,
+        k_param_ch7_option_old,
         k_param_auto_slew_rate,     // deprecated - can be deleted
         k_param_rangefinder_type_old,     // deprecated
         k_param_super_simple = 155,
@@ -375,7 +367,6 @@ public:
     };
 
     AP_Int16        format_version;
-    AP_Int8         software_type;
 
     // Telemetry control
     //
@@ -441,12 +432,6 @@ public:
     AP_Int16        radio_tuning_high;
     AP_Int16        radio_tuning_low;
     AP_Int8         frame_type;
-    AP_Int8         ch7_option;
-    AP_Int8         ch8_option;
-    AP_Int8         ch9_option;
-    AP_Int8         ch10_option;
-    AP_Int8         ch11_option;
-    AP_Int8         ch12_option;
     AP_Int8         disarm_delay;
 
     AP_Int8         land_repositioning;
@@ -521,6 +506,9 @@ public:
     // ground effect compensation enable/disable
     AP_Int8 gndeffect_comp_enabled;
 
+    // temperature calibration handling
+    AP_TempCalibration temp_calibration;
+
 #if BEACON_ENABLED == ENABLED
     // beacon (non-GPS positioning) library
     AP_Beacon beacon;
@@ -557,7 +545,7 @@ public:
     AP_Int8 frame_class;
 
     // RC input channels
-    RC_Channels rc_channels;
+    RC_Channels_Copter rc_channels;
     
     // control over servo output ranges
     SRV_Channels servo_channels;
@@ -579,9 +567,6 @@ public:
     // Land alt final stage
     AP_Int16 land_alt_low;
 
-    // temperature calibration handling
-    AP_TempCalibration temp_calibration;
-
 #if TOY_MODE_ENABLED == ENABLED
     ToyMode toy_mode;
 #endif
@@ -595,6 +580,12 @@ public:
     // follow
     AP_Follow follow;
 #endif
+
+#ifdef USER_PARAMS_ENABLED
+    // User custom parameters
+    UserParameters user_parameters;
+#endif
+
 };
 
 extern const AP_Param::Info        var_info[];

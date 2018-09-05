@@ -22,6 +22,8 @@
  */
 
 #include <AP_HAL/AP_HAL.h>
+
+#define AP_AHRS_NAVEKF_AVAILABLE 1
 #include "AP_AHRS.h"
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
@@ -33,7 +35,7 @@
 #include <AP_NavEKF3/AP_NavEKF3.h>
 #include <AP_NavEKF/AP_Nav_Common.h>              // definitions shared by inertial and ekf nav filters
 
-#define AP_AHRS_NAVEKF_AVAILABLE 1
+
 #define AP_AHRS_NAVEKF_SETTLE_TIME_MS 20000     // time in milliseconds the ekf needs to settle after being started
 
 class AP_AHRS_NavEKF : public AP_AHRS_DCM {
@@ -122,9 +124,6 @@ public:
 
     // blended accelerometer values in the earth frame in m/s/s
     const Vector3f &get_accel_ef_blended() const override;
-
-    // set home location
-    void set_home(const Location &loc) override;
 
     // set the EKF's origin location in 10e7 degrees.  This should only
     // be called when the EKF has no absolute position reference (i.e. GPS)

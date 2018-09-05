@@ -16,26 +16,36 @@
  */
 #pragma once
 
+#include <stdint.h>
 #include <AP_HAL/AP_HAL_Boards.h>
-
-#if CONFIG_HAL_BOARD == HAL_BOARD_CHIBIOS
-#include "AP_HAL_ChibiOS.h"
+#include <AP_HAL/AP_HAL_Macros.h>
+#include <AP_HAL/Semaphores.h>
+#include "AP_HAL_ChibiOS_Namespace.h"
 
 class ChibiOS::Semaphore : public AP_HAL::Semaphore {
 public:
-    Semaphore() {
-        chMtxObjectInit(&_lock);
-    }
-    bool give();
-    bool take(uint32_t timeout_ms);
-    bool take_nonblocking();
-    bool check_owner(void) {
-        return _lock.owner == chThdGetSelfX();
-    }
-    void assert_owner(void) {
-        osalDbgAssert(check_owner(), "owner");
-    }
-private:
-    mutex_t _lock;
+    Semaphore();
+    virtual bool give() override;
+    virtual bool take(uint32_t timeout_ms) override;
+    virtual bool take_nonblocking() override;
+
+    // methods within HAL_ChibiOS only
+    bool check_owner(void);
+    void assert_owner(void);
+protected:
+    // to avoid polluting the global namespace with the 'ch' variable,
+    // we declare the lock as a uint64_t, and cast inside the cpp file
+    uint64_t _lock[2];
 };
-#endif // CONFIG_HAL_BOARD
+
+// a recursive semaphore, allowing for a thread to take it more than
+// once. It must be released the same number of times it is taken
+class ChibiOS::Semaphore_Recursive : public ChibiOS::Semaphore {
+public:
+    Semaphore_Recursive();
+    bool give() override;
+    bool take(uint32_t timeout_ms) override;
+    bool take_nonblocking() override;
+private:
+    uint32_t count;
+};

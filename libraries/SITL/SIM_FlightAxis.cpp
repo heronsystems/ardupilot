@@ -40,9 +40,19 @@ using namespace SITL;
 static const struct {
     const char *name;
     float value;
+    bool save;
 } sim_defaults[] = {
     { "AHRS_EKF_TYPE", 10 },
     { "INS_GYR_CAL", 0 },
+    { "RC1_MIN", 1000, true },
+    { "RC1_MAX", 2000, true },
+    { "RC2_MIN", 1000, true },
+    { "RC2_MAX", 2000, true },
+    { "RC3_MIN", 1000, true },
+    { "RC3_MAX", 2000, true },
+    { "RC4_MIN", 1000, true },
+    { "RC4_MAX", 2000, true },
+    { "RC2_REVERSED", 1 }, // interlink has reversed rc2
     { "SERVO1_MIN", 1000 },
     { "SERVO1_MAX", 2000 },
     { "SERVO2_MIN", 1000 },
@@ -85,6 +95,13 @@ FlightAxis::FlightAxis(const char *home_str, const char *frame_str) :
     }
     for (uint8_t i=0; i<ARRAY_SIZE(sim_defaults); i++) {
         AP_Param::set_default_by_name(sim_defaults[i].name, sim_defaults[i].value);
+        if (sim_defaults[i].save) {
+            enum ap_var_type ptype;
+            AP_Param *p = AP_Param::find(sim_defaults[i].name, &ptype);
+            if (!p->configured()) {
+                p->save();
+            }
+        }
     }
 
     /* Create the thread that will be waiting for data from FlightAxis */
@@ -411,7 +428,7 @@ void FlightAxis::update(const struct sitl_input &input)
                state.m_accelerationBodyAZ_MPS2);
 
     // accel on the ground is nasty in realflight, and prevents helicopter disarm
-    if (state.m_isTouchingGround) {
+    if (!is_zero(state.m_isTouchingGround)) {
         Vector3f accel_ef = (velocity_ef - last_velocity_ef) / dt_seconds;
         accel_ef.z -= GRAVITY_MSS;
         accel_body = dcm.transposed() * accel_ef;
@@ -424,7 +441,7 @@ void FlightAxis::update(const struct sitl_input &input)
     accel_body.z = constrain_float(accel_body.z, -a_limit, a_limit);
 
     // offset based on first position to account for offset in RF world
-    if (position_offset.is_zero() || state.m_resetButtonHasBeenPressed) {
+    if (position_offset.is_zero() || !is_zero(state.m_resetButtonHasBeenPressed)) {
         position_offset = position;
     }
     position -= position_offset;
@@ -475,7 +492,7 @@ void FlightAxis::update(const struct sitl_input &input)
 void FlightAxis::report_FPS(void)
 {
     if (frame_counter++ % 1000 == 0) {
-        if (last_frame_count_s != 0) {
+        if (!is_zero(last_frame_count_s)) {
             uint64_t frames = socket_frame_counter - last_socket_frame_counter;
             last_socket_frame_counter = socket_frame_counter;
             double dt = state.m_currentPhysicsTime_SEC - last_frame_count_s;

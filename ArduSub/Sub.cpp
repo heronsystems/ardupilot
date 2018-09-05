@@ -23,8 +23,8 @@ const AP_HAL::HAL& hal = AP_HAL::get_HAL();
 /*
   constructor for main Sub class
  */
-Sub::Sub(void)
-    : DataFlash(fwver.fw_string, g.log_bitmask),
+Sub::Sub()
+    : DataFlash(g.log_bitmask),
           control_mode(MANUAL),
           motors(MAIN_LOOP_RATE),
           scaleLongDown(1),
@@ -52,7 +52,6 @@ Sub::Sub(void)
           wp_nav(inertial_nav, ahrs_view, pos_control, attitude_control),
           loiter_nav(inertial_nav, ahrs_view, pos_control, attitude_control),
           circle_nav(inertial_nav, ahrs_view, pos_control),
-          in_mavlink_delay(false),
           param_loader(var_info),
           last_pilot_yaw_input_ms(0)
 {

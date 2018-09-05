@@ -29,6 +29,7 @@
 #include <AP_InertialSensor/AP_InertialSensor.h>
 #include <AP_Baro/AP_Baro.h>
 #include <AP_Param/AP_Param.h>
+#include <AP_Common/Semaphore.h>
 
 class OpticalFlow;
 #define AP_AHRS_TRIM_LIMIT 10.0f        // maximum trim angle in degrees
@@ -161,12 +162,7 @@ public:
 
     // allow for runtime change of orientation
     // this makes initial config easier
-    void set_orientation() {
-        AP::ins().set_board_orientation((enum Rotation)_board_orientation.get());
-        if (_compass != nullptr) {
-            _compass->set_board_orientation((enum Rotation)_board_orientation.get());
-        }
-    }
+    void set_orientation();
 
     void set_airspeed(AP_Airspeed *airspeed) {
         _airspeed = airspeed;
@@ -268,6 +264,9 @@ public:
     const Matrix3f& get_rotation_autopilot_body_to_vehicle_body(void) const { return _rotation_autopilot_body_to_vehicle_body; }
     const Matrix3f& get_rotation_vehicle_body_to_autopilot_body(void) const { return _rotation_vehicle_body_to_autopilot_body; }
 
+    // get rotation matrix specifically from DCM backend (used for compass calibrator)
+    virtual const Matrix3f &get_DCM_rotation_body_to_ned(void) const = 0;
+    
     // get our current position estimate. Return true if a position is available,
     // otherwise false. This call fills in lat, lng and alt
     virtual bool get_position(struct Location &loc) const = 0;
@@ -441,14 +440,18 @@ public:
         return _home;
     }
 
-    enum HomeState home_status(void) const {
-        return _home_status;
+    // functions to handle locking of home.  Some vehicles use this to
+    // allow GCS to lock in a home location.
+    void lock_home() {
+        _home_locked = true;
     }
-    void set_home_status(enum HomeState new_status) {
-        _home_status = new_status;
+    bool home_is_locked() const {
+        return _home_locked;
     }
+
+    // returns true if home is set
     bool home_is_set(void) const {
-        return _home_status != HOME_UNSET;
+        return _home_is_set;
     }
 
     // set the home location in 10e7 degrees. This should be called
@@ -463,6 +466,8 @@ public:
 
     // returns the inertial navigation origin in lat/lon/alt
     virtual bool get_origin(Location &ret) const { return false; }
+
+    void Log_Write_Home_And_Origin();
 
     // return true if the AHRS object supports inertial navigation,
     // with very accurate position and velocity
@@ -567,7 +572,16 @@ public:
     // Write position and quaternion data from an external navigation system
     virtual void writeExtNavData(const Vector3f &sensOffset, const Vector3f &pos, const Quaternion &quat, float posErr, float angErr, uint32_t timeStamp_ms, uint32_t resetTime_ms) { }
 
+    // allow threads to lock against AHRS update
+    HAL_Semaphore &get_semaphore(void) {
+        return _rsem;
+    }
+    
 protected:
+    
+    // multi-thread access support
+    HAL_Semaphore_Recursive _rsem;
+    
     AHRS_VehicleClass _vehicle_class;
 
     // settable parameters
@@ -583,6 +597,11 @@ protected:
     AP_Int8 _gps_minsats;
     AP_Int8 _gps_delay;
     AP_Int8 _ekf_type;
+    AP_Float _custom_roll;
+    AP_Float _custom_pitch;
+    AP_Float _custom_yaw;
+
+    Matrix3f _custom_rotation;
 
     // flags structure
     struct ahrs_flags {
@@ -647,6 +666,8 @@ protected:
 
     // reference position for NED positions
     struct Location _home;
+    bool _home_is_set :1;
+    bool _home_locked :1;
 
     // helper trig variables
     float _cos_roll, _cos_pitch, _cos_yaw;
@@ -665,9 +686,6 @@ protected:
 private:
     static AP_AHRS *_singleton;
 
-    // Flag for if we have g_gps lock and have set the home location in AHRS
-    enum HomeState _home_status = HOME_UNSET;
-
 };
 
 #include "AP_AHRS_DCM.h"
@@ -681,4 +699,10 @@ private:
 
 namespace AP {
     AP_AHRS &ahrs();
+
+    // use ahrs_navekf() only where the AHRS interface doesn't expose the
+    // functionality you require:
+#if AP_AHRS_NAVEKF_AVAILABLE
+    AP_AHRS_NavEKF &ahrs_navekf();
+#endif
 };

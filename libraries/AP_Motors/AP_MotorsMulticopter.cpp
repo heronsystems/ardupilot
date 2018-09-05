@@ -83,8 +83,8 @@ const AP_Param::GroupInfo AP_MotorsMulticopter::var_info[] = {
 
     // @Param: PWM_TYPE
     // @DisplayName: Output PWM type
-    // @Description: This selects the output PWM type, allowing for normal PWM continuous output, OneShot or brushed motor output
-    // @Values: 0:Normal,1:OneShot,2:OneShot125,3:Brushed
+    // @Description: This selects the output PWM type, allowing for normal PWM continuous output, OneShot, brushed or DShot motor output
+    // @Values: 0:Normal,1:OneShot,2:OneShot125,3:Brushed,4:DShot150,5:DShot300,6:DShot600,7:DShot1200
     // @User: Advanced
     // @RebootRequired: True
     AP_GROUPINFO("PWM_TYPE", 15, AP_MotorsMulticopter, _pwm_type, PWM_TYPE_NORMAL),
@@ -190,16 +190,10 @@ const AP_Param::GroupInfo AP_MotorsMulticopter::var_info[] = {
 AP_MotorsMulticopter::AP_MotorsMulticopter(uint16_t loop_rate, uint16_t speed_hz) :
     AP_Motors(loop_rate, speed_hz),
     _spool_mode(SHUT_DOWN),
-    _spin_up_ratio(0.0f),
     _lift_max(1.0f),
-    _throttle_limit(1.0f),
-    _throttle_thrust_max(0.0f),
-    _disarm_safety_timer(0)
+    _throttle_limit(1.0f)
 {
     AP_Param::setup_object_defaults(this, var_info);
-
-    // disable all motors by default
-    memset(motor_enabled, false, sizeof(motor_enabled));
 
     // setup battery voltage filtering
     _batt_voltage_filt.set_cutoff_frequency(AP_MOTORS_BATT_VOLT_FILT_HZ);
@@ -614,6 +608,13 @@ void AP_MotorsMulticopter::output_motor_mask(float thrust, uint8_t mask)
             rc_write(i, motor_out);
         }
     }
+}
+
+// get_motor_mask - returns a bitmask of which outputs are being used for motors (1 means being used)
+//  this can be used to ensure other pwm outputs (i.e. for servos) do not conflict
+uint16_t AP_MotorsMulticopter::get_motor_mask()
+{
+    return SRV_Channels::get_output_channel_mask(SRV_Channel::k_boost_throttle);
 }
 
 // save parameters as part of disarming

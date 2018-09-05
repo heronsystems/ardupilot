@@ -227,10 +227,6 @@ void Plane::dspoiler_update(void)
  */
 void Plane::set_servos_idle(void)
 {
-    if (auto_state.idle_wiggle_stage == 0) {
-        SRV_Channels::output_trim_all();
-        return;
-    }
     int16_t servo_value = 0;
     // move over full range for 2 seconds
     auto_state.idle_wiggle_stage += 2;
@@ -352,8 +348,12 @@ void Plane::set_servos_controlled(void)
     if (!hal.util->get_soft_armed()) {
         if (arming.arming_required() == AP_Arming::YES_ZERO_PWM) {
             SRV_Channels::set_output_limit(SRV_Channel::k_throttle, SRV_Channel::SRV_CHANNEL_LIMIT_ZERO_PWM);
+            SRV_Channels::set_output_limit(SRV_Channel::k_throttleLeft, SRV_Channel::SRV_CHANNEL_LIMIT_ZERO_PWM);
+            SRV_Channels::set_output_limit(SRV_Channel::k_throttleRight, SRV_Channel::SRV_CHANNEL_LIMIT_ZERO_PWM);
         } else {
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, 0);
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft, 0);
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, 0);
         }
     } else if (suppress_throttle()) {
         // throttle is suppressed in auto mode
@@ -382,6 +382,7 @@ void Plane::set_servos_controlled(void)
             constrain_int16(quadplane.forward_throttle_pct(), min_throttle, max_throttle));
     }
 
+#if SOARING_ENABLED == ENABLED
     // suppress throttle when soaring is active
     if ((control_mode == FLY_BY_WIRE_B || control_mode == CRUISE ||
         control_mode == AUTO || control_mode == LOITER) &&
@@ -389,6 +390,7 @@ void Plane::set_servos_controlled(void)
         g2.soaring_controller.get_throttle_suppressed()) {
         SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, 0);
     }
+#endif
 }
 
 /*
@@ -403,7 +405,6 @@ void Plane::set_servos_flaps(void)
     // work out any manual flap input
     RC_Channel *flapin = RC_Channels::rc_channel(g.flapin_channel-1);
     if (flapin != nullptr && !failsafe.rc_failsafe && failsafe.throttle_counter == 0) {
-        flapin->input();
         manual_flap_percent = flapin->percent_input();
     }
 
@@ -503,9 +504,18 @@ void Plane::servos_twin_engine_mix(void)
         throttle_left  = constrain_float(throttle + 50 * rudder, 0, 100);
         throttle_right = constrain_float(throttle - 50 * rudder, 0, 100);
     }
-    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft, throttle_left);
-    SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, throttle_right);
-
+    if (!hal.util->get_soft_armed()) {
+        if (arming.arming_required() == AP_Arming::YES_ZERO_PWM) {
+            SRV_Channels::set_output_limit(SRV_Channel::k_throttleLeft, SRV_Channel::SRV_CHANNEL_LIMIT_ZERO_PWM);
+            SRV_Channels::set_output_limit(SRV_Channel::k_throttleRight, SRV_Channel::SRV_CHANNEL_LIMIT_ZERO_PWM);
+        } else {
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft, 0);
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, 0);
+        }
+    } else {
+        SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft, throttle_left);
+        SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, throttle_right);
+    }
 }
 
 
@@ -560,7 +570,6 @@ void Plane::set_servos(void)
         // steering output
         steering_control.rudder = steering_control.steering;
     }
-    SRV_Channels::set_output_scaled(SRV_Channel::k_rudder, steering_control.rudder);
 
     // clear ground_steering to ensure manual control if the yaw stabilizer doesn't run
     steering_control.ground_steering = false;
@@ -600,11 +609,15 @@ void Plane::set_servos(void)
 
         case AP_Arming::YES_ZERO_PWM:
             SRV_Channels::set_output_pwm(SRV_Channel::k_throttle, 0);
+            SRV_Channels::set_output_pwm(SRV_Channel::k_throttleLeft, 0);
+            SRV_Channels::set_output_pwm(SRV_Channel::k_throttleRight, 0);
             break;
 
         case AP_Arming::YES_MIN_PWM:
         default:
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, 0);
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleLeft, 0);
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, 0);
             break;
         }
     }

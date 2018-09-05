@@ -23,16 +23,12 @@ public:
 	VRBRAINGPIO();
     void    init() override;
     void    pinMode(uint8_t pin, uint8_t output) override;
-    int8_t  analogPinToDigitalPin(uint8_t pin) override;
     uint8_t read(uint8_t pin) override;
     void    write(uint8_t pin, uint8_t value) override;
     void    toggle(uint8_t pin) override;
 
     /* Alternative interface: */
     AP_HAL::DigitalSource* channel(uint16_t n) override;
-
-    /* Interrupt interface: */
-    bool attach_interrupt(uint8_t interrupt_num, AP_HAL::Proc p, uint8_t mode) override;
 
     /* return true if USB cable is connected */
     bool usb_connected(void) override;

@@ -14,7 +14,7 @@ static bool in_failsafe;
 void Sub::mainloop_failsafe_enable()
 {
     failsafe_enabled = true;
-    failsafe_last_timestamp = micros();
+    failsafe_last_timestamp = AP_HAL::micros();
 }
 
 // Disable mainloop lockup failsafe
@@ -65,7 +65,7 @@ void Sub::mainloop_failsafe_check()
     }
 }
 
-void Sub::failsafe_sensors_check(void)
+void Sub::failsafe_sensors_check()
 {
     if (!ap.depth_sensor_present) {
         return;
@@ -95,7 +95,7 @@ void Sub::failsafe_sensors_check(void)
     }
 }
 
-void Sub::failsafe_ekf_check(void)
+void Sub::failsafe_ekf_check()
 {
     static uint32_t last_ekf_good_ms = 0;
 
@@ -314,7 +314,7 @@ void Sub::failsafe_gcs_check()
     uint32_t tnow = AP_HAL::millis();
 
     // Check if we have gotten a GCS heartbeat recently (GCS sysid must match SYSID_MYGCS parameter)
-    if (tnow < failsafe.last_heartbeat_ms + FS_GCS_TIMEOUT_MS) {
+    if (tnow - failsafe.last_heartbeat_ms > FS_GCS_TIMEOUT_MS) {
         // Log event if we are recovering from previous gcs failsafe
         if (failsafe.gcs) {
             Log_Write_Error(ERROR_SUBSYSTEM_FAILSAFE_GCS, ERROR_CODE_FAILSAFE_RESOLVED);
@@ -328,7 +328,7 @@ void Sub::failsafe_gcs_check()
     //////////////////////////////
 
     // Send a warning every 30 seconds
-    if (tnow > failsafe.last_gcs_warn_ms + 30000) {
+    if (tnow - failsafe.last_gcs_warn_ms > 30000) {
         failsafe.last_gcs_warn_ms = tnow;
         gcs().send_text(MAV_SEVERITY_WARNING, "MYGCS: %d, heartbeat lost", g.sysid_my_gcs);
     }
@@ -346,9 +346,13 @@ void Sub::failsafe_gcs_check()
     if (g.failsafe_gcs == FS_GCS_DISARM) {
         init_disarm_motors();
     } else if (g.failsafe_gcs == FS_GCS_HOLD && motors.armed()) {
-        set_mode(ALT_HOLD, MODE_REASON_GCS_FAILSAFE);
+        if (!set_mode(ALT_HOLD, MODE_REASON_GCS_FAILSAFE)) {
+            init_disarm_motors();
+        }
     } else if (g.failsafe_gcs == FS_GCS_SURFACE && motors.armed()) {
-        set_mode(SURFACE, MODE_REASON_GCS_FAILSAFE);
+        if (!set_mode(SURFACE, MODE_REASON_GCS_FAILSAFE)) {
+            init_disarm_motors();
+        }
     }
 }
 
@@ -437,7 +441,7 @@ void Sub::failsafe_terrain_check()
 // set terrain data status (found or not found)
 void Sub::failsafe_terrain_set_status(bool data_ok)
 {
-    uint32_t now = millis();
+    uint32_t now = AP_HAL::millis();
 
     // record time of first and latest failures (i.e. duration of failures)
     if (!data_ok) {

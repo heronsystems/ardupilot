@@ -54,7 +54,6 @@
 #include <AC_PID/AC_PID_2D.h>          // PID library (2-axis)
 #include <AC_AttitudeControl/AC_AttitudeControl_Sub.h> // Attitude control library
 #include <AC_AttitudeControl/AC_PosControl_Sub.h>      // Position control library
-#include <RC_Channel/RC_Channel.h>         // RC Channel Library
 #include <AP_Motors/AP_Motors.h>          // AP Motors library
 #include <AP_RangeFinder/AP_RangeFinder.h>     // Range finder library
 #include <Filter/Filter.h>             // Filter library
@@ -82,6 +81,7 @@
 #include "defines.h"
 #include "config.h"
 #include "GCS_Mavlink.h"
+#include "RC_Channel.h"         // RC Channel Library
 #include "Parameters.h"
 #include "AP_Arming_Sub.h"
 #include "GCS_Sub.h"
@@ -130,6 +130,7 @@ public:
     friend class Parameters;
     friend class ParametersG2;
     friend class AP_Arming_Sub;
+    friend class RC_Channels_Sub;
 
     Sub(void);
 
@@ -234,7 +235,6 @@ private:
             uint8_t compass_mot         : 1; // true if we are currently performing compassmot calibration
             uint8_t motor_test          : 1; // true if we are currently performing the motors test
             uint8_t initialised         : 1; // true once the init_ardupilot function has completed.  Extended status to GCS is not sent until this completes
-            uint8_t system_time_set     : 1; // true if the system time has been set from the GPS
             uint8_t gps_base_pos_set    : 1; // true when the gps base position has been set (used for RTK gps only)
             uint8_t at_bottom           : 1; // true if we are at the bottom
             uint8_t at_surface          : 1; // true if we are at the surface
@@ -334,7 +334,7 @@ private:
                            FUNCTOR_BIND_MEMBER(&Sub::handle_battery_failsafe, void, const char*, const int8_t),
                            _failsafe_priorities};
 
-    AP_Arming_Sub arming{ahrs, compass, battery};
+    AP_Arming_Sub arming;
 
     // Altitude
     // The cm/s we are moving up or down based on filtered data - Positive = UP
@@ -423,7 +423,7 @@ private:
 #endif
 
 #if AVOIDANCE_ENABLED == ENABLED
-    AC_Avoid avoid{ahrs, inertial_nav, fence, g2.proximity, &g2.beacon};
+    AC_Avoid avoid{ahrs, fence, g2.proximity, &g2.beacon};
 #endif
 
     // Rally library
@@ -436,8 +436,13 @@ private:
     AP_Terrain terrain{ahrs, mission, rally};
 #endif
 
-    // use this to prevent recursion during sensor init
-    bool in_mavlink_delay;
+    // used to allow attitude and depth control without a position system
+    struct attitude_no_gps_struct {
+        uint32_t last_message_ms;
+        mavlink_set_attitude_target_t packet;
+    };
+
+    attitude_no_gps_struct set_attitude_target_no_gps {0};
 
     // Top-level logic
     // setup the var_info table
@@ -451,7 +456,7 @@ private:
     static const AP_Param::Info var_info[];
     static const struct LogStructure log_structure[];
 
-    void compass_accumulate(void);
+    void init_compass_location();
     void compass_cal_update(void);
     void fast_loop();
     void fifty_hz_loop();
@@ -477,23 +482,15 @@ private:
     void gcs_send_heartbeat(void);
     void gcs_send_deferred(void);
     void send_heartbeat(mavlink_channel_t chan);
-    void send_attitude(mavlink_channel_t chan);
-    void send_limits_status(mavlink_channel_t chan);
     void send_extended_status1(mavlink_channel_t chan);
-    void send_location(mavlink_channel_t chan);
     void send_nav_controller_output(mavlink_channel_t chan);
-    void send_simstate(mavlink_channel_t chan);
-    void send_radio_out(mavlink_channel_t chan);
-    void send_vfr_hud(mavlink_channel_t chan);
 #if RPM_ENABLED == ENABLED
     void send_rpm(mavlink_channel_t chan);
     void rpm_update();
 #endif
-    void send_temperature(mavlink_channel_t chan);
-    bool send_info(mavlink_channel_t chan);
     void send_pid_tuning(mavlink_channel_t chan);
     void gcs_data_stream_send(void);
-    void gcs_check_input(void);
+    void gcs_update(void);
     void do_erase_logs(void);
     void Log_Write_Optflow();
     void Log_Write_Control_Tuning();
@@ -507,8 +504,6 @@ private:
     void Log_Write_Data(uint8_t id, uint16_t value);
     void Log_Write_Data(uint8_t id, float value);
     void Log_Write_Error(uint8_t sub_system, uint8_t error_code);
-    void Log_Write_Baro(void);
-    void Log_Write_Home_And_Origin();
     void Log_Sensor_Health();
     void Log_Write_GuidedTarget(uint8_t target_type, const Vector3f& pos_target, const Vector3f& vel_target);
     void Log_Write_Vehicle_Startup_Messages();
@@ -523,9 +518,7 @@ private:
     void set_home_to_current_location_inflight();
     bool set_home_to_current_location(bool lock);
     bool set_home(const Location& loc, bool lock);
-    void set_ekf_origin(const Location& loc);
     bool far_from_EKF_origin(const Location& loc);
-    void set_system_time_from_GPS();
     void exit_mission();
     bool verify_loiter_unlimited();
     bool verify_loiter_time();
@@ -609,7 +602,7 @@ private:
     void update_surface_and_bottom_detector();
     void set_surfaced(bool at_surface);
     void set_bottomed(bool at_bottom);
-    bool init_arm_motors(bool arming_from_gcs);
+    bool init_arm_motors(AP_Arming::ArmingMethod method);
     void init_disarm_motors();
     void motors_output();
     Vector3f pv_location_to_vector(const Location& loc);
@@ -708,6 +701,14 @@ private:
     uint16_t get_pilot_speed_dn();
 
     void convert_old_parameters(void);
+    bool handle_do_motor_test(mavlink_command_long_t command);
+    bool init_motor_test();
+    bool verify_motor_test();
+
+    uint32_t last_do_motor_test_fail_ms = 0;
+    uint32_t last_do_motor_test_ms = 0;
+
+    bool control_check_barometer();
 
     enum Failsafe_Action {
         Failsafe_Action_None    = 0,
@@ -735,6 +736,3 @@ public:
 
 extern const AP_HAL::HAL& hal;
 extern Sub sub;
-
-using AP_HAL::millis;
-using AP_HAL::micros;

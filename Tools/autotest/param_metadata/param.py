@@ -90,14 +90,17 @@ known_units = {
              'd%'      : 'decipercent'           , # decipercent is strange, but "per-mille" is even more exotic
              'dB'      : 'decibel'               ,
 # compound
+
+             'kB'      : 'kilobytes'                ,
              'm.m/s/s' : 'square meter per square second',
              'deg/m/s' : 'degrees per meter per second'  ,
              'm/s/m'   : 'meters per second per meter'   , # Why not use Hz here ????
              'mGauss/A': 'milligauss per ampere' ,
-             'mA.h'    : 'milliampere hour'      ,
+             'mAh'    : 'milliampere hour'      ,
              'A/V'     : 'ampere per volt'       ,
              'm/V'     : 'meters per volt'       ,
              'gravities': 'standard acceleration due to gravity' , # g_n would be a more correct unit, but IMHO no one understands what g_n means
+             'octal'   : 'octal'                 ,
              }
 
 required_param_fields = [

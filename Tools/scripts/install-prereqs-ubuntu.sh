@@ -1,4 +1,5 @@
 #!/bin/bash
+echo "---------- $0 start ----------"
 set -e
 set -x
 
@@ -10,7 +11,7 @@ PX4_PKGS="python-argparse openocd flex bison libncurses5-dev \
           zip genromfs python-empy cmake cmake-data"
 ARM_LINUX_PKGS="g++-arm-linux-gnueabihf pkg-config-arm-linux-gnueabihf"
 # python-wxgtk packages are added to SITL_PKGS below
-SITL_PKGS="libtool libxml2-dev libxslt1-dev python-dev python-pip python-setuptools python-matplotlib python-serial python-scipy python-opencv python-numpy python-pyparsing realpath"
+SITL_PKGS="libtool libxml2-dev libxslt1-dev python-dev python-pip python-setuptools python-matplotlib python-serial python-scipy python-opencv python-numpy python-pyparsing xterm"
 ASSUME_YES=false
 QUIET=false
 
@@ -25,7 +26,7 @@ fi
 # (see https://launchpad.net/gcc-arm-embedded/)
 ARM_ROOT="gcc-arm-none-eabi-4_9-2015q3"
 ARM_TARBALL="$ARM_ROOT-20150921-linux.tar.bz2"
-ARM_TARBALL_URL="http://firmware.ardupilot.org/Tools/PX4-tools/$ARM_TARBALL"
+ARM_TARBALL_URL="http://firmware.ardupilot.org/Tools/STM32-tools/$ARM_TARBALL"
 
 # Ardupilot Tools
 ARDUPILOT_TOOLS="Tools/autotest"
@@ -75,7 +76,9 @@ fi
 
 sudo usermod -a -G dialout $USER
 
-$APT_GET remove modemmanager
+if dpkg-query -l "modemmanager"; then
+    $APT_GET remove modemmanager
+fi
 $APT_GET update
 
 if apt-cache search python-wxgtk3.0 | grep wx; then
@@ -83,6 +86,11 @@ if apt-cache search python-wxgtk3.0 | grep wx; then
 else
     # we only support back to trusty:
     SITL_PKGS+=" python-wxgtk2.8"
+fi
+
+RP=$(apt-cache search -n '^realpath$')
+if [ -n "$RP" ]; then
+    BASE_PKGS+=" realpath"
 fi
 
 $APT_GET install $BASE_PKGS $SITL_PKGS $PX4_PKGS $ARM_LINUX_PKGS
@@ -124,6 +132,6 @@ apt-cache search arm-none-eabi
 
 (
  cd $ARDUPILOT_ROOT
- git submodule init
- git submodule update
+ git submodule update --init --recursive
 )
+echo "---------- $0 end ----------"
