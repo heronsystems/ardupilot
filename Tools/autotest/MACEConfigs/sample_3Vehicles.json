@@ -1,0 +1,57 @@
+{
+    
+    "vehicles": {
+        "1": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.821292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15001,
+            "commPort": "todo..."
+        },
+		"2": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.822292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15002,
+            "commPort": "todo..."
+        },
+		"3": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.823292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15003,
+            "commPort": "todo..."
+        }
+    }
+}
+

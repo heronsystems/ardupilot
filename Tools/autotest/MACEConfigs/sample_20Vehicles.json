@@ -1,0 +1,346 @@
+{
+    
+    "vehicles": {
+        "1": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.821292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15001,
+            "commPort": "todo..."
+        },
+		"2": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.822292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15002,
+            "commPort": "todo..."
+        },
+		"3": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.823292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15003,
+            "commPort": "todo..."
+        },
+		"4": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.823292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15004,
+            "commPort": "todo..."
+        },
+		"5": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.823292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15005,
+            "commPort": "todo..."
+        },
+		"6": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.823292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15006,
+            "commPort": "todo..."
+        },
+		"7": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.823292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15007,
+            "commPort": "todo..."
+        },
+		"8": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.823292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15008,
+            "commPort": "todo..."
+        },
+		"9": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.823292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15009,
+            "commPort": "todo..."
+        },
+		"10": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.823292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15060,
+            "commPort": "todo..."
+        },
+		"11": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.823292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15061,
+            "commPort": "todo..."
+        },
+		"12": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.823292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15062,
+            "commPort": "todo..."
+        },
+		"13": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.823292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15063,
+            "commPort": "todo..."
+        },
+		"14": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.823292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15064,
+            "commPort": "todo..."
+        },
+		"15": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.823292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15065,
+            "commPort": "todo..."
+        },
+		"16": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.823292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15066,
+            "commPort": "todo..."
+        },
+		"17": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.823292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15067,
+            "commPort": "todo..."
+        },
+		"18": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.823292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15068,
+            "commPort": "todo..."
+        },
+		"19": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.823292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15069,
+            "commPort": "todo..."
+        },
+		"20": {
+            "type": "ArduCopter",
+            "frame": "quad",
+            "sensor": "hokuyo_utm30lx",
+            "enableSensor": true,
+            "position": {
+                "lat": 32.395513,
+                "lng": -84.823292,
+                "alt_msl": 0,
+                "heading_deg": 240
+            },
+            "console": false,
+            "simulated": true,
+            "outputIP": "127.0.0.1",
+            "outputPort": 15070,
+            "commPort": "todo..."
+        }
+    }
+}
+
