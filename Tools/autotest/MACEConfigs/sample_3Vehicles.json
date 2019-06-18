@@ -7,8 +7,8 @@
             "sensor": "hokuyo_utm30lx",
             "enableSensor": true,
             "position": {
-                "lat": 32.395513,
-                "lng": -84.821292,
+                "lat": 32.38858001170154,
+                "lng": -84.81097966432574,
                 "alt_msl": 0,
                 "heading_deg": 240
             },
@@ -24,8 +24,8 @@
             "sensor": "hokuyo_utm30lx",
             "enableSensor": true,
             "position": {
-                "lat": 32.395513,
-                "lng": -84.822292,
+                "lat": 32.38858001170154,
+                "lng": -84.81097966432574,
                 "alt_msl": 0,
                 "heading_deg": 240
             },
@@ -41,8 +41,8 @@
             "sensor": "hokuyo_utm30lx",
             "enableSensor": true,
             "position": {
-                "lat": 32.395513,
-                "lng": -84.823292,
+                "lat": 32.38858001170154,
+                "lng": -84.81097966432574,
                 "alt_msl": 0,
                 "heading_deg": 240
             },
