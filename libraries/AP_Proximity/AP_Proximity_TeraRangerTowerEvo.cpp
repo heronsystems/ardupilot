@@ -28,10 +28,11 @@ extern const AP_HAL::HAL& hal;
    already know that we should setup the proximity sensor
 */
 AP_Proximity_TeraRangerTowerEvo::AP_Proximity_TeraRangerTowerEvo(AP_Proximity &_frontend,
-                                                         AP_Proximity::Proximity_State &_state,
-                                                         AP_SerialManager &serial_manager) :
+                                                         AP_Proximity::Proximity_State &_state) :
     AP_Proximity_Backend(_frontend, _state)
 {
+    const AP_SerialManager &serial_manager = AP::serialmanager();
+
     uart = serial_manager.find_serial(AP_SerialManager::SerialProtocol_Lidar360, 0);
     if (uart != nullptr) {
         uart->begin(serial_manager.find_baudrate(AP_SerialManager::SerialProtocol_Lidar360, 0));
@@ -40,11 +41,9 @@ AP_Proximity_TeraRangerTowerEvo::AP_Proximity_TeraRangerTowerEvo(AP_Proximity &_
 }
 
 // detect if a TeraRanger Tower proximity sensor is connected by looking for a configured serial port
-bool AP_Proximity_TeraRangerTowerEvo::detect(AP_SerialManager &serial_manager)
+bool AP_Proximity_TeraRangerTowerEvo::detect()
 {
-    AP_HAL::UARTDriver *uart = nullptr;
-    uart = serial_manager.find_serial(AP_SerialManager::SerialProtocol_Lidar360, 0);
-    return uart != nullptr;
+    return (AP::serialmanager().find_serial(AP_SerialManager::SerialProtocol_Lidar360, 0) != nullptr);
 }
 
 // update the state of the sensor
@@ -65,9 +64,9 @@ void AP_Proximity_TeraRangerTowerEvo::update(void)
 
     // check for timeout and set health status
     if ((_last_distance_received_ms == 0) || (AP_HAL::millis() - _last_distance_received_ms > PROXIMITY_TRTOWER_TIMEOUT_MS)) {
-        set_status(AP_Proximity::Proximity_NoData);
+        set_status(AP_Proximity::Status::NoData);
     } else {
-        set_status(AP_Proximity::Proximity_Good);
+        set_status(AP_Proximity::Status::Good);
     }
 }
 
@@ -150,35 +149,20 @@ bool AP_Proximity_TeraRangerTowerEvo::read_sensor_data()
 
             //check if message has right CRC
             if (crc_crc8(buffer, 19) == buffer[19]){
-
-                uint16_t d1 = process_distance(buffer[2], buffer[3]);
-                uint16_t d2 = process_distance(buffer[4], buffer[5]);
-                uint16_t d3 = process_distance(buffer[6], buffer[7]);
-                uint16_t d4 = process_distance(buffer[8], buffer[9]);
-                uint16_t d5 = process_distance(buffer[10], buffer[11]);
-                uint16_t d6 = process_distance(buffer[12], buffer[13]);
-                uint16_t d7 = process_distance(buffer[14], buffer[15]);
-                uint16_t d8 = process_distance(buffer[16], buffer[17]);
-
-                update_sector_data(0, d1);
-                update_sector_data(45, d2);
-                update_sector_data(90, d3);
-                update_sector_data(135, d4);
-                update_sector_data(180, d5);
-                update_sector_data(225, d6);
-                update_sector_data(270, d7);
-                update_sector_data(315, d8);
+                update_sector_data(0,   UINT16_VALUE(buffer[2],  buffer[3]));   // d1
+                update_sector_data(45,  UINT16_VALUE(buffer[4],  buffer[5]));   // d2
+                update_sector_data(90,  UINT16_VALUE(buffer[6],  buffer[7]));   // d3
+                update_sector_data(135, UINT16_VALUE(buffer[8],  buffer[9]));   // d4
+                update_sector_data(180, UINT16_VALUE(buffer[10], buffer[11]));  // d5
+                update_sector_data(225, UINT16_VALUE(buffer[12], buffer[13]));  // d6
+                update_sector_data(270, UINT16_VALUE(buffer[14], buffer[15]));  // d7
+                update_sector_data(315, UINT16_VALUE(buffer[16], buffer[17]));  // d8
 
                 message_count++;
             }
         }
     }
     return (message_count > 0);
-}
-
-uint16_t AP_Proximity_TeraRangerTowerEvo::process_distance(uint8_t buf1, uint8_t buf2)
-{
-    return (buf1 << 8) + buf2;
 }
 
 // process reply
@@ -193,6 +177,6 @@ void AP_Proximity_TeraRangerTowerEvo::update_sector_data(int16_t angle_deg, uint
         _distance_valid[sector] = distance_cm != 0xffff && distance_cm != 0x0000 && distance_cm != 0x0001;
         _last_distance_received_ms = AP_HAL::millis();
         // update boundary used for avoidance
-        update_boundary_for_sector(sector);
+        update_boundary_for_sector(sector, true);
     }
 }

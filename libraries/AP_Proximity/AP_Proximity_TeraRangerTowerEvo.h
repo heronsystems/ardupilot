@@ -9,17 +9,17 @@ class AP_Proximity_TeraRangerTowerEvo : public AP_Proximity_Backend {
 
 public:
     // constructor
-    AP_Proximity_TeraRangerTowerEvo(AP_Proximity &_frontend, AP_Proximity::Proximity_State &_state, AP_SerialManager &serial_manager);
+    AP_Proximity_TeraRangerTowerEvo(AP_Proximity &_frontend, AP_Proximity::Proximity_State &_state);
 
     // static detection function
-    static bool detect(AP_SerialManager &serial_manager);
+    static bool detect();
 
     // update state
-    void update(void);
+    void update(void) override;
 
     // get maximum and minimum distances (in meters) of sensor
-    float distance_max() const;
-    float distance_min() const; 
+    float distance_max() const override;
+    float distance_min() const override;
 
 private:
 
@@ -27,7 +27,6 @@ private:
     void initialise_modes();
     bool read_sensor_data();
     void update_sector_data(int16_t angle_deg, uint16_t distance_cm);
-    uint16_t process_distance(uint8_t buf1, uint8_t buf2);
     void set_mode(const uint8_t *c, int length);
 
     enum InitState {

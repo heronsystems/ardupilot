@@ -9,7 +9,7 @@ void Copter::set_auto_armed(bool b)
 
     ap.auto_armed = b;
     if(b){
-        Log_Write_Event(DATA_AUTO_ARMED);
+        AP::logger().Write_Event(LogEvent::AUTO_ARMED);
     }
 }
 
@@ -24,18 +24,18 @@ void Copter::set_simple_mode(uint8_t b)
     if (ap.simple_mode != b) {
         switch (b) {
             case 0:
-                Log_Write_Event(DATA_SET_SIMPLE_OFF);
+                AP::logger().Write_Event(LogEvent::SET_SIMPLE_OFF);
                 gcs().send_text(MAV_SEVERITY_INFO, "SIMPLE mode off");
                 break;
             case 1:
-                Log_Write_Event(DATA_SET_SIMPLE_ON);
+                AP::logger().Write_Event(LogEvent::SET_SIMPLE_ON);
                 gcs().send_text(MAV_SEVERITY_INFO, "SIMPLE mode on");
                 break;
             case 2:
             default:
                 // initialise super simple heading
                 update_super_simple_bearing(true);
-                Log_Write_Event(DATA_SET_SUPERSIMPLE_ON);
+                AP::logger().Write_Event(LogEvent::SET_SUPERSIMPLE_ON);
                 gcs().send_text(MAV_SEVERITY_INFO, "SUPERSIMPLE mode on");
                 break;
         }
@@ -86,20 +86,6 @@ void Copter::update_using_interlock()
 #else
     // check if we are using motor interlock control on an aux switch or are in throw mode
     // which uses the interlock to stop motors while the copter is being thrown
-    ap.using_interlock = rc().find_channel_for_option(RC_Channel::aux_func::MOTOR_INTERLOCK) != nullptr;
+    ap.using_interlock = rc().find_channel_for_option(RC_Channel::AUX_FUNC::MOTOR_INTERLOCK) != nullptr;
 #endif
-}
-
-void Copter::set_motor_emergency_stop(bool b)
-{
-    if(ap.motor_emergency_stop != b) {
-        ap.motor_emergency_stop = b;
-    }
-
-    // Log new status
-    if (ap.motor_emergency_stop){
-        Log_Write_Event(DATA_MOTORS_EMERGENCY_STOPPED);
-    } else {
-        Log_Write_Event(DATA_MOTORS_EMERGENCY_STOP_CLEARED);
-    }
 }

@@ -26,15 +26,9 @@ private:
     // callback for UAVCAN messages
     void handle_mag_msg(const Vector3f &mag);
 
-    static bool take_registry();
-    static void give_registry();
     static AP_Compass_UAVCAN* get_uavcan_backend(AP_UAVCAN* ap_uavcan, uint8_t node_id, uint8_t sensor_id);
 
     uint8_t  _instance;
-    bool _initialized;
-
-    Vector3f _sum;
-    uint32_t _count;
 
     AP_UAVCAN* _ap_uavcan;
     uint8_t _node_id;
@@ -48,5 +42,5 @@ private:
         AP_Compass_UAVCAN *driver;
     } _detected_modules[COMPASS_MAX_BACKEND];
 
-    static AP_HAL::Semaphore *_sem_registry;
+    static HAL_Semaphore _sem_registry;
 };

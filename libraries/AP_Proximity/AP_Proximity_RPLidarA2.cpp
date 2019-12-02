@@ -69,11 +69,12 @@ extern const AP_HAL::HAL& hal;
    constructor is not called until detect() returns true, so we
    already know that we should setup the proximity sensor
  */
-AP_Proximity_RPLidarA2::AP_Proximity_RPLidarA2(AP_Proximity &_frontend,
-                                               AP_Proximity::Proximity_State &_state,
-                                               AP_SerialManager &serial_manager) :
-                                               AP_Proximity_Backend(_frontend, _state)
+AP_Proximity_RPLidarA2::AP_Proximity_RPLidarA2(
+    AP_Proximity &_frontend,
+    AP_Proximity::Proximity_State &_state) :
+    AP_Proximity_Backend(_frontend, _state)
 {
+    const AP_SerialManager &serial_manager = AP::serialmanager();
     _uart = serial_manager.find_serial(AP_SerialManager::SerialProtocol_Lidar360, 0);
     if (_uart != nullptr) {
         _uart->begin(serial_manager.find_baudrate(AP_SerialManager::SerialProtocol_Lidar360, 0));
@@ -84,9 +85,9 @@ AP_Proximity_RPLidarA2::AP_Proximity_RPLidarA2(AP_Proximity &_frontend,
 }
 
 // detect if a RPLidarA2 proximity sensor is connected by looking for a configured serial port
-bool AP_Proximity_RPLidarA2::detect(AP_SerialManager &serial_manager)
+bool AP_Proximity_RPLidarA2::detect()
 {
-    return serial_manager.find_serial(AP_SerialManager::SerialProtocol_Lidar360, 0) != nullptr;
+    return AP::serialmanager().find_serial(AP_SerialManager::SerialProtocol_Lidar360, 0) != nullptr;
 }
 
 // update the _rp_state of the sensor
@@ -108,10 +109,10 @@ void AP_Proximity_RPLidarA2::update(void)
 
     // check for timeout and set health status
     if ((_last_distance_received_ms == 0) || (AP_HAL::millis() - _last_distance_received_ms > COMM_ACTIVITY_TIMEOUT_MS)) {
-        set_status(AP_Proximity::Proximity_NoData);
+        set_status(AP_Proximity::Status::NoData);
         Debug(1, "LIDAR NO DATA");
     } else {
-        set_status(AP_Proximity::Proximity_Good);
+        set_status(AP_Proximity::Status::Good);
     }
 }
 
@@ -394,7 +395,8 @@ void AP_Proximity_RPLidarA2::parse_response_data()
             Debug(2, "UART %02x %02x%02x %02x%02x", payload[0], payload[2], payload[1], payload[4], payload[3]); //show HEX values
             // check if valid SCAN packet: a valid packet starts with startbits which are complementary plus a checkbit in byte+1
             if ((payload.sensor_scan.startbit == !payload.sensor_scan.not_startbit) && payload.sensor_scan.checkbit) {
-                const float angle_deg = payload.sensor_scan.angle_q6/64.0f;
+                const float angle_sign = (frontend.get_orientation(state.instance) == 1) ? -1.0f : 1.0f;
+                const float angle_deg = wrap_360(payload.sensor_scan.angle_q6/64.0f * angle_sign + frontend.get_yaw_correction(state.instance));
                 const float distance_m = (payload.sensor_scan.distance_q2/4000.0f);
 #if RP_DEBUG_LEVEL >= 2
                 const float quality = payload.sensor_scan.quality;
@@ -415,7 +417,7 @@ void AP_Proximity_RPLidarA2::parse_response_data()
                             _distance[_last_sector] = _distance_m_last;
                             _distance_valid[_last_sector] = true;
                             // update boundary used for avoidance
-                            update_boundary_for_sector(_last_sector);
+                            update_boundary_for_sector(_last_sector, true);
                             // initialize the new sector
                             _last_sector     = sector;
                             _distance_m_last = distance_m;

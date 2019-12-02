@@ -11,7 +11,7 @@
  *
  * You should have received a copy of the GNU General Public License along
  * with this program.  If not, see <http://www.gnu.org/licenses/>.
- * 
+ *
  * Code by Andrew Tridgell and Siddharth Bharat Purohit
  */
 #pragma once
@@ -23,16 +23,20 @@
 
 #if HAL_USE_PWM == TRUE
 
+#if !STM32_DMA_ADVANCED
+#define DISABLE_DSHOT
+#endif
+
 class ChibiOS::RCOutput : public AP_HAL::RCOutput {
 public:
-    void     init();
-    void     set_freq(uint32_t chmask, uint16_t freq_hz);
-    uint16_t get_freq(uint8_t ch);
-    void     enable_ch(uint8_t ch);
-    void     disable_ch(uint8_t ch);
-    void     write(uint8_t ch, uint16_t period_us);
-    uint16_t read(uint8_t ch);
-    void     read(uint16_t* period_us, uint8_t len);
+    void     init() override;
+    void     set_freq(uint32_t chmask, uint16_t freq_hz) override;
+    uint16_t get_freq(uint8_t ch) override;
+    void     enable_ch(uint8_t ch) override;
+    void     disable_ch(uint8_t ch) override;
+    void     write(uint8_t ch, uint16_t period_us) override;
+    uint16_t read(uint8_t ch) override;
+    void     read(uint16_t* period_us, uint8_t len) override;
     uint16_t read_last_sent(uint8_t ch) override;
     void     read_last_sent(uint16_t* period_us, uint8_t len) override;
     void     set_esc_scaling(uint16_t min_pwm, uint16_t max_pwm) override {
@@ -49,7 +53,7 @@ public:
     float scale_esc_to_unity(uint16_t pwm) override {
         return 2.0 * ((float) pwm - _esc_pwm_min) / (_esc_pwm_max - _esc_pwm_min) - 1.0;
     }
-    
+
     void     cork(void) override;
     void     push(void) override;
 
@@ -68,7 +72,7 @@ public:
       in the safe state
      */
     void set_safety_pwm(uint32_t chmask, uint16_t period_us) override;
-    
+
     bool enable_px4io_sbus_out(uint16_t rate_hz) override;
 
     /*
@@ -113,7 +117,7 @@ public:
       return the number of bytes read
      */
     uint16_t serial_read_bytes(uint8_t *buf, uint16_t len) override;
-    
+
     /*
       stop serial output. This restores the previous output mode for
       the channel and any other channels that were stopped by
@@ -125,13 +129,49 @@ public:
       enable telemetry request for a mask of channels. This is used
       with DShot to get telemetry feedback
      */
-    void set_telem_request_mask(uint16_t mask) { telem_request_mask = (mask >> chan_offset); }
+    void set_telem_request_mask(uint16_t mask) override { telem_request_mask = (mask >> chan_offset); }
 
     /*
       get safety switch state, used by Util.cpp
     */
     AP_HAL::Util::safety_state _safety_switch_state(void);
-    
+
+    /*
+      set PWM to send to a set of channels if the FMU firmware dies
+     */
+    void set_failsafe_pwm(uint32_t chmask, uint16_t period_us) override;
+
+    /*
+      set safety mask for IOMCU
+     */
+    void set_safety_mask(uint16_t mask) { safety_mask = mask; }
+
+    /*
+     * mark the channels in chanmask as reversible. This is needed for some ESC types (such as DShot)
+     * so that output scaling can be performed correctly. The chanmask passed is added (ORed) into
+     * any existing mask.
+     */
+    void set_reversible_mask(uint16_t chanmask) override {
+        reversible_mask |= chanmask;
+    }
+
+    /*
+      setup neopixel (WS2812B) output for a given channel number, with
+      the given max number of LEDs in the chain.
+     */
+    bool set_neopixel_num_LEDs(const uint16_t chan, uint8_t num_leds) override;
+
+    /*
+      setup neopixel (WS2812B) output data for a given output channel
+      and mask of LEDs on the channel
+     */
+    void set_neopixel_rgb_data(const uint16_t chan, uint32_t ledmask, uint8_t red, uint8_t green, uint8_t blue) override;
+
+    /*
+      trigger send of neopixel data
+     */
+    void neopixel_send(void) override;
+
 private:
     struct pwm_group {
         // only advanced timers can do high clocks needed for more than 400Hz
@@ -152,24 +192,26 @@ private:
         const stm32_dma_stream_t *dma;
         Shared_DMA *dma_handle;
         uint32_t *dma_buffer;
+        uint16_t dma_buffer_len;
         bool have_lock;
         bool pwm_started;
         uint32_t bit_width_mul;
         uint32_t rc_frequency;
         bool in_serial_dma;
-        uint64_t last_dshot_send_us;
+        uint64_t last_dmar_send_us;
         virtual_timer_t dma_timeout;
-        
+        uint8_t neopixel_nleds;
+
         // serial output
         struct {
             // expected time per bit
             uint32_t bit_time_us;
-            
+
             // channel to output to within group (0 to 3)
             uint8_t chan;
 
             // thread waiting for byte to be written
-            thread_t *waiter;        
+            thread_t *waiter;
         } serial;
     };
 
@@ -189,7 +231,7 @@ private:
         // bitmask of bits so far (includes start and stop bits)
         uint16_t bitmask;
 
-        // value of completed byte (includes start and stop bits)        
+        // value of completed byte (includes start and stop bits)
         uint16_t byteval;
 
         // expected time per bit in system ticks
@@ -197,7 +239,7 @@ private:
 
         // the bit value of the last bit received
         uint8_t last_bit;
-        
+
         // thread waiting for byte to be read
         thread_t *waiter;
 
@@ -206,12 +248,12 @@ private:
         bool timed_out;
     } irq;
 
-    
+
     // the group being used for serial output
     struct pwm_group *serial_group;
     thread_t *serial_thread;
     tprio_t serial_priority;
-    
+
     static pwm_group pwm_group_list[];
     uint16_t _esc_pwm_min;
     uint16_t _esc_pwm_max;
@@ -224,12 +266,12 @@ private:
 
     // number of active fmu channels
     uint8_t active_fmu_channels;
-    
+
     static const uint8_t max_channels = 16;
-    
+
     // last sent values are for all channels
     uint16_t last_sent[max_channels];
-    
+
     // these values are for the local channels. Non-local channels are handled by IOMCU
     uint32_t en_mask;
     uint16_t period[max_channels];
@@ -238,6 +280,7 @@ private:
     // mask of channels that are running in high speed
     uint16_t fast_channel_mask;
     uint16_t io_fast_channel_mask;
+    uint16_t reversible_mask;
 
     // min time to trigger next pulse to prevent overlap
     uint64_t min_pulse_trigger_us;
@@ -254,6 +297,9 @@ private:
     // are we using oneshot125 for the iomcu?
     bool iomcu_oneshot125;
 
+    // find a channel group given a channel number
+    struct pwm_group *find_chan(uint8_t chan, uint8_t &group_idx);
+
     // push out values to local PWM
     void push_local(void);
 
@@ -268,13 +314,14 @@ private:
     uint32_t safety_update_ms;
     uint8_t led_counter;
     int8_t safety_button_counter;
+    uint8_t safety_press_count; // 0.1s units
 
     // mask of channels to allow when safety on
     uint16_t safety_mask;
 
     // update safety switch and LED
     void safety_update(void);
-    
+
     /*
       DShot handling
      */
@@ -286,18 +333,26 @@ private:
     static const uint16_t dshot_min_gap_us = 100;
     uint32_t dshot_pulse_time_us;
     uint16_t telem_request_mask;
-    
+
+    /*
+      NeoPixel handling. Max of 32 LEDs uses max 12k of memory per group
+    */
+    void neopixel_send(pwm_group &group);
+    bool neopixel_pending;
+
     void dma_allocate(Shared_DMA *ctx);
-    void dma_deallocate(Shared_DMA *ctx);    
+    void dma_deallocate(Shared_DMA *ctx);
     uint16_t create_dshot_packet(const uint16_t value, bool telem_request);
     void fill_DMA_buffer_dshot(uint32_t *buffer, uint8_t stride, uint16_t packet, uint16_t clockmul);
     void dshot_send(pwm_group &group, bool blocking);
     static void dma_irq_callback(void *p, uint32_t flags);
     static void dma_unlock(void *p);
     bool mode_requires_dma(enum output_mode mode) const;
-    bool setup_group_DMA(pwm_group &group, uint32_t bitrate, uint32_t bit_width, bool active_high);
+    bool setup_group_DMA(pwm_group &group, uint32_t bitrate, uint32_t bit_width, bool active_high, const uint16_t buffer_length, bool choose_high);
     void send_pulses_DMAR(pwm_group &group, uint32_t buffer_length);
     void set_group_mode(pwm_group &group);
+    bool is_dshot_protocol(const enum output_mode mode) const;
+    uint32_t protocol_bitrate(const enum output_mode mode) const;
 
     // serial output support
     static const eventmask_t serial_event_mask = EVENT_MASK(1);

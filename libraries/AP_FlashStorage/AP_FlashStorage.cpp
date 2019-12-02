@@ -17,6 +17,7 @@
 
 #include <AP_HAL/AP_HAL.h>
 #include <AP_FlashStorage/AP_FlashStorage.h>
+#include <AP_Math/AP_Math.h>
 #include <stdio.h>
 
 #define FLASHSTORAGE_DEBUG 0
@@ -119,7 +120,7 @@ bool AP_FlashStorage::init(void)
     // erase any sectors marked full
     for (uint8_t i=0; i<2; i++) {
         if (states[i] == SECTOR_STATE_FULL) {
-            if (!erase_sector(i)) {
+            if (!erase_sector(i, true)) {
                 return false;
             }
         }
@@ -147,7 +148,7 @@ bool AP_FlashStorage::switch_full_sector(void)
         return false;
     }
 
-    if (!erase_sector(current_sector ^ 1)) {
+    if (!erase_sector(current_sector ^ 1, true)) {
         return false;
     }
 
@@ -186,9 +187,11 @@ bool AP_FlashStorage::write(uint16_t offset, uint16_t length)
         uint16_t block_ofs = header.block_num*block_size;
         uint16_t block_nbytes = (header.num_blocks_minus_one+1)*block_size;
         
+#if AP_FLASHSTORAGE_MULTI_WRITE
         if (!flash_write(current_sector, write_offset, (uint8_t*)&header, sizeof(header))) {
             return false;
         }
+#endif
         if (!flash_write(current_sector, write_offset+sizeof(header), &mem_buffer[block_ofs], block_nbytes)) {
             return false;
         }
@@ -273,12 +276,14 @@ bool AP_FlashStorage::load_sector(uint8_t sector)
 /*
   erase one sector
  */
-bool AP_FlashStorage::erase_sector(uint8_t sector)
+bool AP_FlashStorage::erase_sector(uint8_t sector, bool mark_available)
 {
     if (!flash_erase(sector)) {
         return false;
     }
-
+    if (!mark_available) {
+        return true;
+    }
     struct sector_header header;
     header.signature = signature;
     header.state = SECTOR_STATE_AVAILABLE;
@@ -295,7 +300,10 @@ bool AP_FlashStorage::erase_all(void)
     current_sector = 0;
     write_offset = sizeof(struct sector_header);
     
-    if (!erase_sector(0) || !erase_sector(1)) {
+    if (!erase_sector(0, current_sector!=0)) {
+        return false;
+    }
+    if (!erase_sector(1, current_sector!=1)) {
         return false;
     }
     
@@ -309,13 +317,16 @@ bool AP_FlashStorage::erase_all(void)
 /*
   write all of mem_buffer to current sector
  */
-bool AP_FlashStorage::write_all(void)
+bool AP_FlashStorage::write_all()
 {
     debug("write_all to sector %u at %u with reserved_space=%u\n",
            current_sector, write_offset, reserved_space);
     for (uint16_t ofs=0; ofs<storage_size; ofs += max_write) {
-        if (!all_zero(ofs, max_write)) {
-            if (!write(ofs, max_write)) {
+        // local variable needed to overcome problem with MIN() macro and -O0
+        const uint8_t max_write_local = max_write;
+        uint8_t n = MIN(max_write_local, storage_size-ofs);
+        if (!all_zero(ofs, n)) {
+            if (!write(ofs, n)) {
                 return false;
             }
         }

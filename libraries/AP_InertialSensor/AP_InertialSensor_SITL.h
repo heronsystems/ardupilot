@@ -2,6 +2,7 @@
 
 #include <SITL/SITL.h>
 
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
 #include "AP_InertialSensor.h"
 #include "AP_InertialSensor_Backend.h"
 
@@ -13,7 +14,7 @@ public:
     AP_InertialSensor_SITL(AP_InertialSensor &imu);
 
     /* update accel and gyro state */
-    bool update();
+    bool update() override;
 
     // detect the sensor
     static AP_InertialSensor_Backend *detect(AP_InertialSensor &imu);
@@ -36,3 +37,4 @@ private:
     uint64_t next_gyro_sample[INS_SITL_INSTANCES];
     uint64_t next_accel_sample[INS_SITL_INSTANCES];
 };
+#endif // CONFIG_HAL_BOARD

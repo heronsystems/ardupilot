@@ -19,7 +19,6 @@
  */
 
 #include <AP_Common/AP_Common.h>
-#include <AP_Common/Semaphore.h>
 #include <AP_HAL/AP_HAL.h>
 #include "AP_Airspeed.h"
 
@@ -47,7 +46,7 @@ protected:
     }
     
     // semaphore for access to shared frontend data
-    AP_HAL::Semaphore *sem;
+    HAL_Semaphore_Recursive sem;
 
     float get_airspeed_ratio(void) const {
         return frontend.get_airspeed_ratio(instance);

@@ -22,10 +22,10 @@
 #include "AP_GPS_UAVCAN.h"
 
 #include <AP_BoardConfig/AP_BoardConfig_CAN.h>
-#include <AP_Common/Semaphore.h>
 #include <AP_UAVCAN/AP_UAVCAN.h>
 
 #include <uavcan/equipment/gnss/Fix.hpp>
+#include <uavcan/equipment/gnss/Fix2.hpp>
 #include <uavcan/equipment/gnss/Auxiliary.hpp>
 
 extern const AP_HAL::HAL& hal;
@@ -33,10 +33,11 @@ extern const AP_HAL::HAL& hal;
 #define debug_gps_uavcan(level_debug, can_driver, fmt, args...) do { if ((level_debug) <= AP::can().get_debug_level_driver(can_driver)) { printf(fmt, ##args); }} while (0)
 
 UC_REGISTRY_BINDER(FixCb, uavcan::equipment::gnss::Fix);
+UC_REGISTRY_BINDER(Fix2Cb, uavcan::equipment::gnss::Fix2);
 UC_REGISTRY_BINDER(AuxCb, uavcan::equipment::gnss::Auxiliary);
 
 AP_GPS_UAVCAN::DetectedModules AP_GPS_UAVCAN::_detected_modules[] = {0};
-AP_HAL::Semaphore* AP_GPS_UAVCAN::_sem_registry = nullptr;
+HAL_Semaphore AP_GPS_UAVCAN::_sem_registry;
 
 // Member Methods
 AP_GPS_UAVCAN::AP_GPS_UAVCAN(AP_GPS &_gps, AP_GPS::GPS_State &_state) :
@@ -45,10 +46,9 @@ AP_GPS_UAVCAN::AP_GPS_UAVCAN(AP_GPS &_gps, AP_GPS::GPS_State &_state) :
 
 AP_GPS_UAVCAN::~AP_GPS_UAVCAN()
 {
-    if (take_registry()) {
-        _detected_modules[_detected_module].driver = nullptr;
-        give_registry();
-    }
+    WITH_SEMAPHORE(_sem_registry);
+
+    _detected_modules[_detected_module].driver = nullptr;
 }
 
 void AP_GPS_UAVCAN::subscribe_msgs(AP_UAVCAN* ap_uavcan)
@@ -67,6 +67,14 @@ void AP_GPS_UAVCAN::subscribe_msgs(AP_UAVCAN* ap_uavcan)
         return;
     }
 
+    uavcan::Subscriber<uavcan::equipment::gnss::Fix2, Fix2Cb> *gnss_fix2;
+    gnss_fix2 = new uavcan::Subscriber<uavcan::equipment::gnss::Fix2, Fix2Cb>(*node);
+    const int gnss_fix2_start_res = gnss_fix2->start(Fix2Cb(ap_uavcan, &handle_fix2_msg_trampoline));
+    if (gnss_fix2_start_res < 0) {
+        AP_HAL::panic("UAVCAN GNSS subscriber start problem\n\r");
+        return;
+    }
+    
     uavcan::Subscriber<uavcan::equipment::gnss::Auxiliary, AuxCb> *gnss_aux;
     gnss_aux = new uavcan::Subscriber<uavcan::equipment::gnss::Auxiliary, AuxCb>(*node);
     const int gnss_aux_start_res = gnss_aux->start(AuxCb(ap_uavcan, &handle_aux_msg_trampoline));
@@ -76,24 +84,10 @@ void AP_GPS_UAVCAN::subscribe_msgs(AP_UAVCAN* ap_uavcan)
     }
 }
 
-bool AP_GPS_UAVCAN::take_registry()
-{
-    if (_sem_registry == nullptr) {
-        _sem_registry = hal.util->new_semaphore();
-    }
-    return _sem_registry->take(HAL_SEMAPHORE_BLOCK_FOREVER);
-}
-
-void AP_GPS_UAVCAN::give_registry()
-{
-    _sem_registry->give();
-}
-
 AP_GPS_Backend* AP_GPS_UAVCAN::probe(AP_GPS &_gps, AP_GPS::GPS_State &_state)
 {
-    if (!take_registry()) {
-        return nullptr;
-    }
+    WITH_SEMAPHORE(_sem_registry);
+
     AP_GPS_UAVCAN* backend = nullptr;
     for (uint8_t i = 0; i < GPS_MAX_RECEIVERS; i++) {
         if (_detected_modules[i].driver == nullptr && _detected_modules[i].ap_uavcan != nullptr) {
@@ -116,7 +110,6 @@ AP_GPS_Backend* AP_GPS_UAVCAN::probe(AP_GPS &_gps, AP_GPS::GPS_State &_state)
             break;
         }
     }
-    give_registry();
     return backend;
 }
 
@@ -157,6 +150,10 @@ AP_GPS_UAVCAN* AP_GPS_UAVCAN::get_uavcan_backend(AP_UAVCAN* ap_uavcan, uint8_t n
 
 void AP_GPS_UAVCAN::handle_fix_msg(const FixCb &cb)
 {
+    if (seen_fix2) {
+        // use Fix2 instead
+        return;
+    }
     bool process = false;
 
     WITH_SEMAPHORE(sem);
@@ -189,7 +186,6 @@ void AP_GPS_UAVCAN::handle_fix_msg(const FixCb &cb)
         loc.lng = cb.msg->longitude_deg_1e8 / 10;
         loc.alt = cb.msg->height_msl_mm / 10;
         interim_state.location = loc;
-        interim_state.location.options = 0;
 
         if (!uavcan::isNaN(cb.msg->ned_velocity[0])) {
             Vector3f vel(cb.msg->ned_velocity[0], cb.msg->ned_velocity[1], cb.msg->ned_velocity[2]);
@@ -247,6 +243,120 @@ void AP_GPS_UAVCAN::handle_fix_msg(const FixCb &cb)
     interim_state.last_gps_time_ms = AP_HAL::millis();
 
     _new_data = true;
+    if (!seen_message) {
+        if (interim_state.status == AP_GPS::GPS_Status::NO_GPS) {
+            // the first time we see a fix message we change from
+            // NO_GPS to NO_FIX, indicating to user that a UAVCAN GPS
+            // has been seen
+            interim_state.status = AP_GPS::GPS_Status::NO_FIX;
+        }
+        seen_message = true;
+    }
+}
+
+
+void AP_GPS_UAVCAN::handle_fix2_msg(const Fix2Cb &cb)
+{
+    bool process = false;
+    seen_fix2 = true;
+
+    WITH_SEMAPHORE(sem);
+
+    if (cb.msg->status == uavcan::equipment::gnss::Fix2::STATUS_NO_FIX) {
+        interim_state.status = AP_GPS::GPS_Status::NO_FIX;
+    } else {
+        if (cb.msg->status == uavcan::equipment::gnss::Fix2::STATUS_TIME_ONLY) {
+            interim_state.status = AP_GPS::GPS_Status::NO_FIX;
+        } else if (cb.msg->status == uavcan::equipment::gnss::Fix2::STATUS_2D_FIX) {
+            interim_state.status = AP_GPS::GPS_Status::GPS_OK_FIX_2D;
+            process = true;
+        } else if (cb.msg->status == uavcan::equipment::gnss::Fix2::STATUS_3D_FIX) {
+            interim_state.status = AP_GPS::GPS_Status::GPS_OK_FIX_3D;
+            process = true;
+        }
+
+        if (cb.msg->gnss_time_standard == uavcan::equipment::gnss::Fix2::GNSS_TIME_STANDARD_UTC) {
+            uint64_t epoch_ms = uavcan::UtcTime(cb.msg->gnss_timestamp).toUSec();
+            epoch_ms /= 1000;
+            uint64_t gps_ms = epoch_ms - UNIX_OFFSET_MSEC;
+            interim_state.time_week = (uint16_t)(gps_ms / AP_MSEC_PER_WEEK);
+            interim_state.time_week_ms = (uint32_t)(gps_ms - (interim_state.time_week) * AP_MSEC_PER_WEEK);
+        }
+
+        if (interim_state.status == AP_GPS::GPS_Status::GPS_OK_FIX_3D) {
+            if (cb.msg->mode == uavcan::equipment::gnss::Fix2::MODE_DGPS) {
+                interim_state.status = AP_GPS::GPS_Status::GPS_OK_FIX_3D_DGPS;
+            } else if (cb.msg->mode == uavcan::equipment::gnss::Fix2::MODE_RTK) {
+                if (cb.msg->sub_mode == uavcan::equipment::gnss::Fix2::SUB_MODE_RTK_FLOAT) {
+                    interim_state.status = AP_GPS::GPS_Status::GPS_OK_FIX_3D_RTK_FLOAT;
+                } else if (cb.msg->sub_mode == uavcan::equipment::gnss::Fix2::SUB_MODE_RTK_FIXED) {
+                    interim_state.status = AP_GPS::GPS_Status::GPS_OK_FIX_3D_RTK_FIXED;
+                }
+            }
+        }
+    }
+
+    if (process) {
+        Location loc = { };
+        loc.lat = cb.msg->latitude_deg_1e8 / 10;
+        loc.lng = cb.msg->longitude_deg_1e8 / 10;
+        loc.alt = cb.msg->height_msl_mm / 10;
+        interim_state.location = loc;
+
+        if (!uavcan::isNaN(cb.msg->ned_velocity[0])) {
+            Vector3f vel(cb.msg->ned_velocity[0], cb.msg->ned_velocity[1], cb.msg->ned_velocity[2]);
+            interim_state.velocity = vel;
+            interim_state.ground_speed = norm(vel.x, vel.y);
+            interim_state.ground_course = wrap_360(degrees(atan2f(vel.y, vel.x)));
+            interim_state.have_vertical_velocity = true;
+        } else {
+            interim_state.have_vertical_velocity = false;
+        }
+
+        if (cb.msg->covariance.size() == 6) {
+            if (!uavcan::isNaN(cb.msg->covariance[0])) {
+                interim_state.horizontal_accuracy = sqrtf(cb.msg->covariance[0]);
+                interim_state.have_horizontal_accuracy = true;
+            } else {
+                interim_state.have_horizontal_accuracy = false;
+            }
+            if (!uavcan::isNaN(cb.msg->covariance[2])) {
+                interim_state.vertical_accuracy = sqrtf(cb.msg->covariance[2]);
+                interim_state.have_vertical_accuracy = true;
+            } else {
+                interim_state.have_vertical_accuracy = false;
+            }
+            if (!uavcan::isNaN(cb.msg->covariance[3]) &&
+                !uavcan::isNaN(cb.msg->covariance[4]) &&
+                !uavcan::isNaN(cb.msg->covariance[5])) {
+                interim_state.speed_accuracy = sqrtf((cb.msg->covariance[3] + cb.msg->covariance[4] + cb.msg->covariance[5])/3);
+                interim_state.have_speed_accuracy = true;
+            } else {
+                interim_state.have_speed_accuracy = false;
+            }
+        }
+
+        interim_state.num_sats = cb.msg->sats_used;
+    } else {
+        interim_state.have_vertical_velocity = false;
+        interim_state.have_vertical_accuracy = false;
+        interim_state.have_horizontal_accuracy = false;
+        interim_state.have_speed_accuracy = false;
+        interim_state.num_sats = 0;
+    }
+
+    interim_state.last_gps_time_ms = AP_HAL::millis();
+
+    _new_data = true;
+    if (!seen_message) {
+        if (interim_state.status == AP_GPS::GPS_Status::NO_GPS) {
+            // the first time we see a fix message we change from
+            // NO_GPS to NO_FIX, indicating to user that a UAVCAN GPS
+            // has been seen
+            interim_state.status = AP_GPS::GPS_Status::NO_FIX;
+        }
+        seen_message = true;
+    }
 }
 
 void AP_GPS_UAVCAN::handle_aux_msg(const AuxCb &cb)
@@ -264,23 +374,31 @@ void AP_GPS_UAVCAN::handle_aux_msg(const AuxCb &cb)
 
 void AP_GPS_UAVCAN::handle_fix_msg_trampoline(AP_UAVCAN* ap_uavcan, uint8_t node_id, const FixCb &cb)
 {
-    if (take_registry()) {
-        AP_GPS_UAVCAN* driver = get_uavcan_backend(ap_uavcan, node_id);
-        if (driver != nullptr) {
-            driver->handle_fix_msg(cb);
-        }
-        give_registry();
+    WITH_SEMAPHORE(_sem_registry);
+
+    AP_GPS_UAVCAN* driver = get_uavcan_backend(ap_uavcan, node_id);
+    if (driver != nullptr) {
+        driver->handle_fix_msg(cb);
+    }
+}
+
+void AP_GPS_UAVCAN::handle_fix2_msg_trampoline(AP_UAVCAN* ap_uavcan, uint8_t node_id, const Fix2Cb &cb)
+{
+    WITH_SEMAPHORE(_sem_registry);
+
+    AP_GPS_UAVCAN* driver = get_uavcan_backend(ap_uavcan, node_id);
+    if (driver != nullptr) {
+        driver->handle_fix2_msg(cb);
     }
 }
 
 void AP_GPS_UAVCAN::handle_aux_msg_trampoline(AP_UAVCAN* ap_uavcan, uint8_t node_id, const AuxCb &cb)
 {
-    if (take_registry()) {
-        AP_GPS_UAVCAN* driver = get_uavcan_backend(ap_uavcan, node_id);
-        if (driver != nullptr) {
-            driver->handle_aux_msg(cb);
-        }
-        give_registry();
+    WITH_SEMAPHORE(_sem_registry);
+
+    AP_GPS_UAVCAN* driver = get_uavcan_backend(ap_uavcan, node_id);
+    if (driver != nullptr) {
+        driver->handle_aux_msg(cb);
     }
 }
 
@@ -295,8 +413,25 @@ bool AP_GPS_UAVCAN::read(void)
 
         return true;
     }
+    if (!seen_message) {
+        // start with NO_GPS until we get first packet
+        state.status = AP_GPS::GPS_Status::NO_GPS;
+    }
 
     return false;
+}
+
+/*
+  handle RTCM data from MAVLink GPS_RTCM_DATA, forwarding it over MAVLink
+ */
+void AP_GPS_UAVCAN::inject_data(const uint8_t *data, uint16_t len)
+{
+    // we only handle this if we are the first UAVCAN GPS, as we send
+    // the data as broadcast on all UAVCAN devive ports and we don't
+    // want to send duplicates
+    if (_detected_module == 0) {
+        _detected_modules[0].ap_uavcan->send_RTCMStream(data, len);
+    }
 }
 
 #endif // HAL_WITH_UAVCAN

@@ -6,9 +6,14 @@
 
 extern AP_HAL::HAL& hal;
 
-void
-Compass::compass_cal_update()
+#if COMPASS_CAL_ENABLED
+
+void Compass::cal_update()
 {
+    if (hal.util->get_soft_armed()) {
+        return;
+    }
+
     bool running = false;
 
     for (uint8_t i=0; i<COMPASS_MAX_INSTANCES; i++) {
@@ -41,8 +46,7 @@ Compass::compass_cal_update()
     }
 }
 
-bool
-Compass::_start_calibration(uint8_t i, bool retry, float delay)
+bool Compass::_start_calibration(uint8_t i, bool retry, float delay)
 {
     if (!healthy(i)) {
         return false;
@@ -76,8 +80,7 @@ Compass::_start_calibration(uint8_t i, bool retry, float delay)
     return true;
 }
 
-bool
-Compass::_start_calibration_mask(uint8_t mask, bool retry, bool autosave, float delay, bool autoreboot)
+bool Compass::_start_calibration_mask(uint8_t mask, bool retry, bool autosave, float delay, bool autoreboot)
 {
     _cal_autosave = autosave;
     _compass_cal_autoreboot = autoreboot;
@@ -93,8 +96,7 @@ Compass::_start_calibration_mask(uint8_t mask, bool retry, bool autosave, float 
     return true;
 }
 
-void
-Compass::start_calibration_all(bool retry, bool autosave, float delay, bool autoreboot)
+void Compass::start_calibration_all(bool retry, bool autosave, float delay, bool autoreboot)
 {
     _cal_autosave = autosave;
     _compass_cal_autoreboot = autoreboot;
@@ -106,8 +108,7 @@ Compass::start_calibration_all(bool retry, bool autosave, float delay, bool auto
     }
 }
 
-void
-Compass::_cancel_calibration(uint8_t i)
+void Compass::_cancel_calibration(uint8_t i)
 {
     AP_Notify::events.initiated_compass_cal = 0;
 
@@ -115,27 +116,24 @@ Compass::_cancel_calibration(uint8_t i)
         AP_Notify::events.compass_cal_canceled = 1;
     }
     _cal_saved[i] = false;
-    _calibrator[i].clear();
+    _calibrator[i].stop();
 }
 
-void
-Compass::_cancel_calibration_mask(uint8_t mask)
+void Compass::_cancel_calibration_mask(uint8_t mask)
 {
-    for(uint8_t i=0; i<COMPASS_MAX_INSTANCES; i++) {
-        if((1<<i) & mask) {
+    for (uint8_t i=0; i<COMPASS_MAX_INSTANCES; i++) {
+        if ((1<<i) & mask) {
             _cancel_calibration(i);
         }
     }
 }
 
-void
-Compass::cancel_calibration_all()
+void Compass::cancel_calibration_all()
 {
     _cancel_calibration_mask(0xFF);
 }
 
-bool
-Compass::_accept_calibration(uint8_t i)
+bool Compass::_accept_calibration(uint8_t i)
 {
     CompassCalibrator& cal = _calibrator[i];
     uint8_t cal_status = cal.get_status();
@@ -166,8 +164,7 @@ Compass::_accept_calibration(uint8_t i)
     }
 }
 
-bool
-Compass::_accept_calibration_mask(uint8_t mask)
+bool Compass::_accept_calibration_mask(uint8_t mask)
 {
     bool success = true;
     for (uint8_t i=0; i<COMPASS_MAX_INSTANCES; i++) {
@@ -175,22 +172,24 @@ Compass::_accept_calibration_mask(uint8_t mask)
             if (!_accept_calibration(i)) {
                 success = false;
             }
-            _calibrator[i].clear();
+            _calibrator[i].stop();
         }
     }
 
     return success;
 }
 
-void
-Compass::send_mag_cal_progress(mavlink_channel_t chan)
+bool Compass::send_mag_cal_progress(const GCS_MAVLINK& link)
 {
     uint8_t cal_mask = _get_cal_mask();
 
     for (uint8_t compass_id=0; compass_id<COMPASS_MAX_INSTANCES; compass_id++) {
         // ensure we don't try to send with no space available
-        if (!HAVE_PAYLOAD_SPACE(chan, MAG_CAL_PROGRESS)) {
-            return;
+        if (!HAVE_PAYLOAD_SPACE(link.get_chan(), MAG_CAL_PROGRESS)) {
+            // ideally we would only send one progress message per
+            // call.  If we don't return true here we may end up
+            // hogging *all* the bandwidth
+            return true;
         }
 
         auto& calibrator = _calibrator[compass_id];
@@ -200,28 +199,33 @@ Compass::send_mag_cal_progress(mavlink_channel_t chan)
             cal_status == COMPASS_CAL_RUNNING_STEP_ONE ||
             cal_status == COMPASS_CAL_RUNNING_STEP_TWO) {
             uint8_t completion_pct = calibrator.get_completion_percent();
-            auto& completion_mask = calibrator.get_completion_mask();
-            Vector3f direction(0.0f,0.0f,0.0f);
+            const CompassCalibrator::completion_mask_t& completion_mask = calibrator.get_completion_mask();
+            const Vector3f direction;
             uint8_t attempt = _calibrator[compass_id].get_attempt();
 
             mavlink_msg_mag_cal_progress_send(
-                chan,
+                link.get_chan(),
                 compass_id, cal_mask,
                 cal_status, attempt, completion_pct, completion_mask,
                 direction.x, direction.y, direction.z
             );
         }
     }
+
+    return true;
 }
 
-void Compass::send_mag_cal_report(mavlink_channel_t chan)
+bool Compass::send_mag_cal_report(const GCS_MAVLINK& link)
 {
     uint8_t cal_mask = _get_cal_mask();
 
     for (uint8_t compass_id=0; compass_id<COMPASS_MAX_INSTANCES; compass_id++) {
         // ensure we don't try to send with no space available
-        if (!HAVE_PAYLOAD_SPACE(chan, MAG_CAL_REPORT)) {
-            return;
+        if (!HAVE_PAYLOAD_SPACE(link.get_chan(), MAG_CAL_REPORT)) {
+            // ideally we would only send one progress message per
+            // call.  If we don't return true here we may end up
+            // hogging *all* the bandwidth
+            return true;
         }
 
         uint8_t cal_status = _calibrator[compass_id].get_status();
@@ -234,7 +238,7 @@ void Compass::send_mag_cal_report(mavlink_channel_t chan)
             uint8_t autosaved = _cal_saved[compass_id];
 
             mavlink_msg_mag_cal_report_send(
-                chan,
+                link.get_chan(),
                 compass_id, cal_mask,
                 cal_status, autosaved,
                 fitness,
@@ -247,10 +251,10 @@ void Compass::send_mag_cal_report(mavlink_channel_t chan)
             );
         }
     }
+    return true;
 }
 
-bool
-Compass::is_calibrating() const
+bool Compass::is_calibrating() const
 {
     for (uint8_t i=0; i<COMPASS_MAX_INSTANCES; i++) {
         switch(_calibrator[i].get_status()) {
@@ -266,8 +270,7 @@ Compass::is_calibrating() const
     return false;
 }
 
-uint8_t
-Compass::_get_cal_mask() const
+uint8_t Compass::_get_cal_mask() const
 {
     uint8_t cal_mask = 0;
     for (uint8_t i=0; i<COMPASS_MAX_INSTANCES; i++) {
@@ -277,7 +280,6 @@ Compass::_get_cal_mask() const
     }
     return cal_mask;
 }
-
 
 /*
   handle an incoming MAG_CAL command
@@ -312,32 +314,32 @@ MAV_RESULT Compass::handle_mag_cal_command(const mavlink_command_long_t &packet)
                 result = MAV_RESULT_FAILED;
             }
         }
-        
+
         break;
     }
 
     case MAV_CMD_DO_ACCEPT_MAG_CAL: {
         result = MAV_RESULT_ACCEPTED;
-        if(packet.param1 < 0 || packet.param1 > 255) {
+        if (packet.param1 < 0 || packet.param1 > 255) {
             result = MAV_RESULT_FAILED;
             break;
         }
-        
+
         uint8_t mag_mask = packet.param1;
-        
+
         if (mag_mask == 0) { // 0 means all
             mag_mask = 0xFF;
         }
-        
-        if(!_accept_calibration_mask(mag_mask)) {
+
+        if (!_accept_calibration_mask(mag_mask)) {
             result = MAV_RESULT_FAILED;
         }
         break;
     }
-        
+
     case MAV_CMD_DO_CANCEL_MAG_CAL: {
         result = MAV_RESULT_ACCEPTED;
-        if(packet.param1 < 0 || packet.param1 > 255) {
+        if (packet.param1 < 0 || packet.param1 > 255) {
             result = MAV_RESULT_FAILED;
             break;
         }
@@ -356,3 +358,5 @@ MAV_RESULT Compass::handle_mag_cal_command(const mavlink_command_long_t &packet)
     
     return result;
 }
+
+#endif // COMPASS_CAL_ENABLED

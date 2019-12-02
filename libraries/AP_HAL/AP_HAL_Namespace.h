@@ -31,9 +31,10 @@ namespace AP_HAL {
 
     class CANProtocol;
     class CANManager;
-    class CAN;
+    class CANHal;
 
     class Util;
+    class Flash;
 
     /* Utility Classes */
     class Print;

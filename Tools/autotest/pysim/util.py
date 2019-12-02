@@ -5,12 +5,13 @@ import math
 import os
 import random
 import re
+import shlex
+import signal
 import subprocess
 import sys
 import tempfile
 import time
 from math import acos, atan2, cos, pi, sqrt
-from subprocess import PIPE, Popen, call, check_call
 
 import pexpect
 
@@ -67,11 +68,11 @@ def run_cmd(cmd, directory=".", show=True, output=False, checkfail=True):
     if show:
         print("Running: (%s) in (%s)" % (cmd_as_shell(cmd), directory,))
     if output:
-        return Popen(cmd, shell=shell, stdout=PIPE, cwd=directory).communicate()[0]
+        return subprocess.Popen(cmd, shell=shell, stdout=subprocess.PIPE, cwd=directory).communicate()[0]
     elif checkfail:
-        return check_call(cmd, shell=shell, cwd=directory)
+        return subprocess.check_call(cmd, shell=shell, cwd=directory)
     else:
-        return call(cmd, shell=shell, cwd=directory)
+        return subprocess.call(cmd, shell=shell, cwd=directory)
 
 
 def rmfile(path):
@@ -91,12 +92,15 @@ def relwaf():
     return "./modules/waf/waf-light"
 
 
-def waf_configure(board, j=None, debug=False):
+def waf_configure(board, j=None, debug=False, extra_args=[]):
     cmd_configure = [relwaf(), "configure", "--board", board]
     if debug:
         cmd_configure.append('--debug')
     if j is not None:
         cmd_configure.extend(['-j', str(j)])
+    pieces = [shlex.split(x) for x in extra_args]
+    for piece in pieces:
+        cmd_configure.extend(piece)
     run_cmd(cmd_configure, directory=topdir(), checkfail=True)
 
 
@@ -104,12 +108,12 @@ def waf_clean():
     run_cmd([relwaf(), "clean"], directory=topdir(), checkfail=True)
 
 
-def build_SITL(build_target, j=None, debug=False, board='sitl', clean=True, configure=True):
+def build_SITL(build_target, j=None, debug=False, board='sitl', clean=True, configure=True, extra_configure_args=[]):
     """Build desktop SITL."""
 
     # first configure
     if configure:
-        waf_configure(board, j=j, debug=debug)
+        waf_configure(board, j=j, debug=debug, extra_args=extra_configure_args)
 
     # then clean
     if clean:
@@ -162,6 +166,19 @@ def pexpect_close(p):
     """Close a pexpect child."""
     global close_list
 
+    ex = None
+    try:
+        p.kill(signal.SIGTERM)
+    except IOError as e:
+        print("Caught exception: %s" % str(e))
+        ex = e
+        pass
+    if ex is None:
+        # give the process some time to go away
+        for i in range(20):
+            if not p.isalive():
+                break
+            time.sleep(0.05)
     try:
         p.close()
     except Exception:
@@ -210,7 +227,6 @@ def kill_screen_gdb():
     cmd = ["screen", "-X", "-S", "ardupilot-gdb", "quit"]
     subprocess.Popen(cmd)
 
-
 def start_SITL(binary,
                valgrind=False,
                gdb=False,
@@ -223,7 +239,9 @@ def start_SITL(binary,
                unhide_parameters=False,
                gdbserver=False,
                breakpoints=[],
-               vicon=False):
+               disable_breakpoints=False,
+               vicon=False,
+               lldb=False):
     """Launch a SITL instance."""
     cmd = []
     if valgrind and os.path.exists('/usr/bin/valgrind'):
@@ -235,6 +253,9 @@ def start_SITL(binary,
         log_file = valgrind_log_filepath(binary=binary, model=model)
         cmd.extend([
             'valgrind',
+            # adding this option allows valgrind to cope with the overload
+            # of operator new
+            "--soname-synonyms=somalloc=nouserintercepts",
             '--vgdb-prefix=%s' % vgdb_prefix,
             '-q',
             '--log-file=%s' % log_file])
@@ -246,6 +267,8 @@ def start_SITL(binary,
             f.write("target extended-remote localhost:3333\nc\n")
             for breakpoint in breakpoints:
                 f.write("b %s\n" % (breakpoint,))
+            if disable_breakpoints:
+                f.write("disable\n")
             f.close()
             run_cmd('screen -d -m -S ardupilot-gdbserver '
                     'bash -c "gdb -x /tmp/x.gdb"')
@@ -253,6 +276,8 @@ def start_SITL(binary,
         f = open("/tmp/x.gdb", "w")
         for breakpoint in breakpoints:
             f.write("b %s\n" % (breakpoint,))
+        if disable_breakpoints:
+            f.write("disable\n")
         f.write("r\n")
         f.close()
         if os.environ.get('DISPLAY'):
@@ -264,6 +289,19 @@ def start_SITL(binary,
                         '-m',
                         '-S', 'ardupilot-gdb',
                         'gdb', '-x', '/tmp/x.gdb', binary, '--args'])
+    elif lldb:
+        f = open("/tmp/x.lldb", "w")
+        for breakpoint in breakpoints:
+            f.write("b %s\n" % (breakpoint,))
+        if disable_breakpoints:
+            f.write("disable\n")
+        f.write("settings set target.process.stop-on-exec false\n")
+        f.write("process launch\n")
+        f.close()
+        if os.environ.get('DISPLAY'):
+            cmd.extend(['xterm', '-e', 'lldb', '-s','/tmp/x.lldb', '--'])
+        else:
+            raise RuntimeError("DISPLAY was not set")
 
     cmd.append(binary)
     if wipe:
@@ -284,7 +322,7 @@ def start_SITL(binary,
         cmd.extend(["--uartF=sim:vicon:"])
 
     if gdb and not os.getenv('DISPLAY'):
-        p = subprocess.Popen(cmd)
+        subprocess.Popen(cmd)
         atexit.register(kill_screen_gdb)
         # we are expected to return a pexpect wrapped around the
         # stdout of the ArduPilot binary.  Not going to happen until
@@ -303,7 +341,7 @@ def start_SITL(binary,
     pexpect_autoclose(child)
     # give time for parameters to properly setup
     time.sleep(3)
-    if gdb:
+    if gdb or lldb:
         # if we run GDB we do so in an xterm.  "Waiting for
         # connection" is never going to appear on xterm's output.
         # ... so let's give it another magic second.
@@ -315,12 +353,26 @@ def start_SITL(binary,
     return child
 
 
+def mavproxy_cmd():
+    '''return path to which mavproxy to use'''
+    return os.getenv('MAVPROXY_CMD', 'mavproxy.py')
+
+def MAVProxy_version():
+    '''return the current version of mavproxy as a tuple e.g. (1,8,8)'''
+    command = "%s --version" % mavproxy_cmd()
+    output = subprocess.Popen(command, shell=True, stdout=subprocess.PIPE).communicate()[0]
+    output = output.decode('ascii')
+    match = re.search("MAVProxy Version: ([0-9]+)[.]([0-9]+)[.]([0-9]+)", output)
+    if match is None:
+        raise ValueError("Unable to determine MAVProxy version from (%s)" % output)
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+
 def start_MAVProxy_SITL(atype, aircraft=None, setup=False, master='tcp:127.0.0.1:5760',
                         options=[], logfile=sys.stdout):
     """Launch mavproxy connected to a SITL instance."""
     import pexpect
     global close_list
-    MAVPROXY = os.getenv('MAVPROXY_CMD', 'mavproxy.py')
+    MAVPROXY = mavproxy_cmd()
     cmd = MAVPROXY + ' --master=%s --out=127.0.0.1:14550' % master
     if setup:
         cmd += ' --setup'
@@ -328,6 +380,7 @@ def start_MAVProxy_SITL(atype, aircraft=None, setup=False, master='tcp:127.0.0.1
         aircraft = 'test.%s' % atype
     cmd += ' --aircraft=%s' % aircraft
     cmd += ' ' + ' '.join(options)
+    cmd += ' --default-modules misc,terrain,wp,rally,fence,param,arm,mode,rc,cmdlong,output'
     ret = pexpect.spawn(cmd, logfile=logfile, encoding=ENCODING, timeout=60)
     ret.delaybeforesend = 0
     pexpect_autoclose(ret)
@@ -347,7 +400,6 @@ def expect_setup_callback(e, callback):
                 return ret
             except pexpect.TIMEOUT:
                 e.expect_user_callback(e)
-                pass
         print("Timed out looking for %s" % pattern)
         raise pexpect.TIMEOUT(timeout)
 

@@ -27,7 +27,8 @@ class AP_OSD_Backend;
 /*
   class to hold one setting
  */
-class AP_OSD_Setting {
+class AP_OSD_Setting
+{
 public:
     AP_Int8 enabled;
     AP_Int8 xpos;
@@ -44,7 +45,8 @@ class AP_OSD;
 /*
   class to hold one screen of settings
  */
-class AP_OSD_Screen {
+class AP_OSD_Screen
+{
 public:
     // constructor
     AP_OSD_Screen();
@@ -88,6 +90,8 @@ private:
     AP_OSD_Setting compass{true, 15, 3};
     AP_OSD_Setting wind{false, 2, 12};
     AP_OSD_Setting aspeed{false, 2, 13};
+    AP_OSD_Setting aspd1{false, 0, 0};
+    AP_OSD_Setting aspd2{false, 0, 0};
     AP_OSD_Setting vspeed{true, 24, 9};
 
 #ifdef HAVE_AP_BLHELI_SUPPORT
@@ -101,6 +105,7 @@ private:
     AP_OSD_Setting roll_angle{false, 0, 0};
     AP_OSD_Setting pitch_angle{false, 0, 0};
     AP_OSD_Setting temp{false, 0, 0};
+    AP_OSD_Setting btemp{false, 0, 0};
     AP_OSD_Setting hdop{false, 0, 0};
     AP_OSD_Setting waypoint{false, 0, 0};
     AP_OSD_Setting xtrack_error{false, 0, 0};
@@ -109,6 +114,10 @@ private:
     AP_OSD_Setting flightime{false, 23, 10};
     AP_OSD_Setting climbeff{false,0,0};
     AP_OSD_Setting eff{false, 22, 10};
+    AP_OSD_Setting atemp{false, 0, 0};
+    AP_OSD_Setting bat2_vlt{false, 0, 0};
+    AP_OSD_Setting bat2used{false, 0, 0};
+    AP_OSD_Setting clk{false, 0, 0};
 
     bool check_option(uint32_t option);
 
@@ -130,6 +139,7 @@ private:
     void draw_rssi(uint8_t x, uint8_t y);
     void draw_current(uint8_t x, uint8_t y);
     void draw_batused(uint8_t x, uint8_t y);
+    void draw_batused(uint8_t instance, uint8_t x, uint8_t y);
     void draw_sats(uint8_t x, uint8_t y);
     void draw_fltmode(uint8_t x, uint8_t y);
     void draw_message(uint8_t x, uint8_t y);
@@ -141,6 +151,8 @@ private:
     void draw_compass(uint8_t x, uint8_t y);
     void draw_wind(uint8_t x, uint8_t y);
     void draw_aspeed(uint8_t x, uint8_t y);
+    void draw_aspd1(uint8_t x, uint8_t y);
+    void draw_aspd2(uint8_t x, uint8_t y);
     void draw_vspeed(uint8_t x, uint8_t y);
 
     //helper functions
@@ -158,6 +170,7 @@ private:
     void draw_roll_angle(uint8_t x, uint8_t y);
     void draw_pitch_angle(uint8_t x, uint8_t y);
     void draw_temp(uint8_t x, uint8_t y);
+    void draw_btemp(uint8_t x, uint8_t y);
     void draw_hdop(uint8_t x, uint8_t y);
     void draw_waypoint(uint8_t x, uint8_t y);
     void draw_xtrack_error(uint8_t x, uint8_t y);
@@ -166,9 +179,14 @@ private:
     void draw_flightime(uint8_t x, uint8_t y);
     void draw_climbeff(uint8_t x, uint8_t y);
     void draw_eff(uint8_t x, uint8_t y);
+    void draw_atemp(uint8_t x, uint8_t y);
+    void draw_bat2_vlt(uint8_t x, uint8_t y);
+    void draw_bat2used(uint8_t x, uint8_t y);
+    void draw_clk(uint8_t x, uint8_t y);
 };
 
-class AP_OSD {
+class AP_OSD
+{
 public:
     friend class AP_OSD_Screen;
     //constructor
@@ -206,7 +224,11 @@ public:
     AP_Int8 warn_rssi;
     AP_Int8 warn_nsat;
     AP_Float warn_batvolt;
+    AP_Float warn_bat2volt;
     AP_Int8 msgtime_s;
+    AP_Int8 arm_scr;
+    AP_Int8 disarm_scr;
+    AP_Int8 failsafe_scr;
 
     enum {
         OPTION_DECIMAL_PACK = 1U<<0,
@@ -236,7 +258,7 @@ public:
     };
 
     void set_nav_info(NavInfo &nav_info);
-    
+
 
 private:
     void osd_thread();
@@ -245,13 +267,17 @@ private:
     void update_current_screen();
     void next_screen();
     AP_OSD_Backend *backend;
-    
+
     //variables for screen switching
     uint8_t current_screen;
     uint16_t previous_channel_value;
     bool switch_debouncer;
     uint32_t last_switch_ms;
     struct NavInfo nav_info;
+    int8_t previous_pwm_screen;
+    int8_t pre_fs_screen;
+    bool was_armed;
+    bool was_failsafe;
 
     uint32_t last_update_ms;
     float last_distance_m;
@@ -259,4 +285,5 @@ private:
     float max_alt_m;
     float max_speed_mps;
     float max_current_a;
+    float avg_current_a;
 };

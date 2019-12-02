@@ -23,16 +23,13 @@ public:
     static AP_Airspeed_Backend* probe(AP_Airspeed &_fronted, uint8_t _instance);
 
 private:
-    static bool take_registry();
-
-    static void give_registry();
 
     static void handle_airspeed(AP_UAVCAN* ap_uavcan, uint8_t node_id, const AirspeedCb &cb);
 
     static AP_Airspeed_UAVCAN* get_uavcan_backend(AP_UAVCAN* ap_uavcan, uint8_t node_id);
 
     float _pressure; // Pascal
-    float _temperature; // Kelvin
+    float _temperature; // Celcius
     uint32_t _last_sample_time_ms;
 
     HAL_Semaphore _sem_airspeed;
@@ -44,5 +41,6 @@ private:
         AP_Airspeed_UAVCAN *driver;
     } _detected_modules[AIRSPEED_MAX_SENSORS];
 
-    static AP_HAL::Semaphore *_sem_registry;
+    static HAL_Semaphore _sem_registry;
+    bool _have_temperature;
 };

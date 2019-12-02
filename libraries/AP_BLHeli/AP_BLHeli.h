@@ -57,19 +57,22 @@ public:
 
     // get the most recent telemetry data packet for a motor
     bool get_telem_data(uint8_t esc_index, struct telem_data &td);
+    // return the average motor frequency in Hz for dynamic filtering
+    float get_average_motor_frequency_hz() const;
 
     static AP_BLHeli *get_singleton(void) {
-        return singleton;
+        return _singleton;
     }
 
     // send ESC telemetry messages over MAVLink
     void send_esc_telemetry_mavlink(uint8_t mav_chan);
     
 private:
-    static AP_BLHeli *singleton;
+    static AP_BLHeli *_singleton;
     
     // mask of channels to use for BLHeli protocol
     AP_Int32 channel_mask;
+    AP_Int32 channel_reversible_mask;
     AP_Int8 channel_auto;
     AP_Int8 run_test;
     AP_Int16 timeout_sec;
@@ -77,6 +80,7 @@ private:
     AP_Int8 debug_level;
     AP_Int8 output_type;
     AP_Int8 control_port;
+    AP_Int8 motor_poles;
     
     enum mspState {
         MSP_IDLE=0,

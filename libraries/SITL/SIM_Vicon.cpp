@@ -26,23 +26,12 @@
 
 using namespace SITL;
 
-Vicon::Vicon()
+#define USE_VISION_POSITION_ESTIMATE 1
+
+
+Vicon::Vicon() :
+    SerialDevice::SerialDevice()
 {
-    int tmp[2];
-    if (pipe(tmp) == -1) {
-        AP_HAL::panic("pipe() failed");
-    }
-    fd_my_end    = tmp[1];
-    fd_their_end = tmp[0];
-
-    // close file descriptors on exec:
-    fcntl(fd_my_end, F_SETFD, FD_CLOEXEC);
-    fcntl(fd_their_end, F_SETFD, FD_CLOEXEC);
-
-    // make sure we don't screw the simulation up by blocking:
-    fcntl(fd_my_end, F_SETFL, fcntl(fd_my_end, F_GETFL, 0) | O_NONBLOCK);
-    fcntl(fd_their_end, F_SETFL, fcntl(fd_their_end, F_GETFL, 0) | O_NONBLOCK);
-
     if (!valid_channel(mavlink_ch)) {
         AP_HAL::panic("Invalid mavlink channel");
     }
@@ -94,8 +83,8 @@ void Vicon::update_vicon_position_estimate(const Location &loc,
         return;
     }
 
-    if (now_us - last_observation_usec < 10000) {
-        // create observations at 10ms
+    if (now_us - last_observation_usec < 70000) {
+        // create observations at 70ms intervals (matches EK2 max rate)
         return;
     }
 
@@ -104,6 +93,22 @@ void Vicon::update_vicon_position_estimate(const Location &loc,
     float yaw;
     attitude.to_euler(roll, pitch, yaw);
 
+#if USE_VISION_POSITION_ESTIMATE
+    // use the more recent VISION_POSITION_ESTIMATE message
+    mavlink_msg_vision_position_estimate_pack_chan(
+        system_id,
+        component_id,
+        mavlink_ch,
+        &obs_msg,
+        now_us + time_offset_us,
+        position.x,
+        position.y,
+        position.z,
+        roll,
+        pitch,
+        yaw,
+        NULL, 0);
+#else
     mavlink_msg_vicon_position_estimate_pack_chan(
         system_id,
         component_id,
@@ -117,20 +122,10 @@ void Vicon::update_vicon_position_estimate(const Location &loc,
         pitch,
         yaw,
         NULL);
+#endif // USE_VISION_POSITION_ESTIMATE
 
     uint32_t delay_ms = 25 + unsigned(random()) % 300;
     time_send_us = now_us + delay_ms * 1000UL;
-}
-
-bool Vicon::init_sitl_pointer()
-{
-    if (_sitl == nullptr) {
-        _sitl = AP::sitl();
-        if (_sitl == nullptr) {
-            return false;
-        }
-    }
-    return true;
 }
 
 /*

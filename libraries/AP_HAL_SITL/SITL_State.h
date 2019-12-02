@@ -24,6 +24,18 @@
 #include <SITL/SIM_Gimbal.h>
 #include <SITL/SIM_ADSB.h>
 #include <SITL/SIM_Vicon.h>
+#include <SITL/SIM_RF_Benewake_TF02.h>
+#include <SITL/SIM_RF_Benewake_TF03.h>
+#include <SITL/SIM_RF_Benewake_TFmini.h>
+#include <SITL/SIM_RF_LightWareSerial.h>
+#include <SITL/SIM_RF_Lanbao.h>
+#include <SITL/SIM_RF_BLping.h>
+#include <SITL/SIM_RF_LeddarOne.h>
+#include <SITL/SIM_RF_uLanding_v0.h>
+#include <SITL/SIM_RF_uLanding_v1.h>
+#include <SITL/SIM_RF_MaxsonarSerialLV.h>
+#include <SITL/SIM_RF_Wasp.h>
+#include <SITL/SIM_RF_NMEA.h>
 #include <AP_HAL/utility/Socket.h>
 
 class HAL_SITL;
@@ -54,9 +66,11 @@ public:
         return _base_port;
     }
 
-    // create a file desciptor attached to a virtual device; type of
+    // create a file descriptor attached to a virtual device; type of
     // device is given by name parameter
     int sim_fd(const char *name, const char *arg);
+    // returns a write file descriptor for a created virtual device
+    int sim_fd_write(const char *name);
 
     bool use_rtscts(void) const {
         return _use_rtscts;
@@ -81,7 +95,12 @@ public:
         "tcp:5",
         "tcp:6",
     };
-    
+
+    /* parse a home location string */
+    static bool parse_home(const char *home_str,
+                           Location &loc,
+                           float &yaw_degrees);
+
 private:
     void _parse_command_line(int argc, char * const argv[]);
     void _set_param_default(const char *parm);
@@ -102,6 +121,7 @@ private:
         double speedN;
         double speedE;
         double speedD;
+        double yaw;
         bool have_lock;
     };
 
@@ -129,10 +149,12 @@ private:
     uint32_t CalculateBlockCRC32(uint32_t length, uint8_t *buffer, uint32_t crc);
 
     void _update_gps(double latitude, double longitude, float altitude,
-                     double speedN, double speedE, double speedD, bool have_lock);
+                     double speedN, double speedE, double speedD,
+                     double yaw, bool have_lock);
     void _update_airspeed(float airspeed);
     void _update_gps_instance(SITL::SITL::GPSType gps_type, const struct gps_data *d, uint8_t instance);
     void _check_rc_input(void);
+    bool _read_rc_sitl_input();
     void _fdm_input_local(void);
     void _output_to_flightgear(void);
     void _simulator_servos(struct sitl_input &input);
@@ -213,6 +235,32 @@ private:
 
     // simulated vicon system:
     SITL::Vicon *vicon;
+
+    // simulated Benewake tf02 rangefinder:
+    SITL::RF_Benewake_TF02 *benewake_tf02;
+    // simulated Benewake tf03 rangefinder:
+    SITL::RF_Benewake_TF03 *benewake_tf03;
+    // simulated Benewake tfmini rangefinder:
+    SITL::RF_Benewake_TFmini *benewake_tfmini;
+
+    // simulated LightWareSerial rangefinder:
+    SITL::RF_LightWareSerial *lightwareserial;
+    // simulated Lanbao rangefinder:
+    SITL::RF_Lanbao *lanbao;
+    // simulated BLping rangefinder:
+    SITL::RF_BLping *blping;
+    // simulated LeddarOne rangefinder:
+    SITL::RF_LeddarOne *leddarone;
+    // simulated uLanding v0 rangefinder:
+    SITL::RF_uLanding_v0 *ulanding_v0;
+    // simulated uLanding v1 rangefinder:
+    SITL::RF_uLanding_v1 *ulanding_v1;
+    // simulated MaxsonarSerialLV rangefinder:
+    SITL::RF_MaxsonarSerialLV *maxsonarseriallv;
+    // simulated Wasp rangefinder:
+    SITL::RF_Wasp *wasp;
+    // simulated NMEA rangefinder:
+    SITL::RF_NMEA *nmea;
 
     // output socket for flightgear viewing
     SocketAPM fg_socket{true};
