@@ -67,6 +67,10 @@ public:
 
     virtual bool prepare_for_arming(void) { return true; }
 
+    // optional support for retrieving RTCMv3 data from a moving baseline base
+    virtual bool get_RTCMV3(const uint8_t *&bytes, uint16_t &len) { return false; }
+    virtual void clear_RTCMV3(void) {};
+
 protected:
     AP_HAL::UARTDriver *port;           ///< UART we are attached to
     AP_GPS &gps;                        ///< access to frontend (for parameters)
@@ -98,7 +102,14 @@ protected:
     void set_uart_timestamp(uint16_t nbytes);
 
     void check_new_itow(uint32_t itow, uint32_t msg_length);
-    
+
+    /*
+      access to driver option bits
+     */
+    uint16_t driver_options(void) const {
+        return uint16_t(gps._driver_options.get());
+    }
+
 private:
     // itow from previous message
     uint32_t _last_itow;

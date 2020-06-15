@@ -448,11 +448,10 @@ bool AP_Logger_Backend::Write_Mission_Cmd(const AP_Mission &mission,
     return WriteBlock(&pkt, sizeof(pkt));
 }
 
-void AP_Logger_Backend::Write_EntireMission()
+bool AP_Logger_Backend::Write_EntireMission()
 {
-    LoggerMessageWriter_WriteEntireMission writer{};
-    writer.set_logger_backend(this);
-    writer.process();
+    // kick off asynchronous write:
+    return _startup_messagewriter->writeentiremission();
 }
 
 // Write a text message to the log
@@ -641,9 +640,7 @@ void AP_Logger::Write_AttitudeView(AP_AHRS_View &ahrs, const Vector3f &targets)
 }
 
 void AP_Logger::Write_Current_instance(const uint64_t time_us,
-                                                 const uint8_t battery_instance,
-                                                 const enum LogMessages type,
-                                                 const enum LogMessages celltype)
+                                       const uint8_t battery_instance)
 {
     AP_BattMonitor &battery = AP::battery();
     float temp;
@@ -660,8 +657,9 @@ void AP_Logger::Write_Current_instance(const uint64_t time_us,
     }
 
     const struct log_Current pkt = {
-        LOG_PACKET_HEADER_INIT(type),
+        LOG_PACKET_HEADER_INIT(LOG_CURRENT_MSG),
         time_us             : time_us,
+        instance            : battery_instance,
         voltage             : battery.voltage(battery_instance),
         voltage_resting     : battery.voltage_resting_estimate(battery_instance),
         current_amps        : current,
@@ -676,8 +674,9 @@ void AP_Logger::Write_Current_instance(const uint64_t time_us,
     if (battery.has_cell_voltages(battery_instance)) {
         const AP_BattMonitor::cells &cells = battery.get_cell_voltages(battery_instance);
         struct log_Current_Cells cell_pkt{
-            LOG_PACKET_HEADER_INIT(celltype),
+            LOG_PACKET_HEADER_INIT(LOG_CURRENT_CELLS_MSG),
             time_us             : time_us,
+            instance            : battery_instance,
             voltage             : battery.voltage(battery_instance)
         };
         for (uint8_t i = 0; i < ARRAY_SIZE(cells.cells); i++) {
@@ -694,23 +693,10 @@ void AP_Logger::Write_Current_instance(const uint64_t time_us,
 // Write an Current data packet
 void AP_Logger::Write_Current()
 {
-    // Big painful assert to ensure that logging won't produce suprising results when the
-    // number of battery monitors changes, does have the built in expectation that
-    // LOG_COMPASS_MSG follows the last LOG_CURRENT_CELLSx_MSG
-    static_assert(((LOG_CURRENT_MSG + AP_BATT_MONITOR_MAX_INSTANCES) == LOG_CURRENT_CELLS_MSG) &&
-                  ((LOG_CURRENT_CELLS_MSG + AP_BATT_MONITOR_MAX_INSTANCES) == LOG_COMPASS_MSG),
-                  "The number of batt monitors has changed without updating the log "
-                  "table entries. Please add new enums for LOG_CURRENT_MSG, LOG_CURRENT_CELLS_MSG "
-                  "directly following the highest indexed fields. Don't forget to update the log "
-                  "description table as well.");
-
     const uint64_t time_us = AP_HAL::micros64();
     const uint8_t num_instances = AP::battery().num_instances();
     for (uint8_t i = 0; i < num_instances; i++) {
-        Write_Current_instance(time_us,
-                                   i,
-                                   (LogMessages)((uint8_t)LOG_CURRENT_MSG + i),
-                                   (LogMessages)((uint8_t)LOG_CURRENT_CELLS_MSG + i));
+        Write_Current_instance(time_us, i);
     }
 }
 
@@ -780,15 +766,12 @@ bool AP_Logger_Backend::Write_Mode(uint8_t mode, const ModeReason reason)
 //   current is in centi-amps
 //   temperature is in centi-degrees Celsius
 //   current_tot is in centi-amp hours
-void AP_Logger::Write_ESC(uint8_t id, uint64_t time_us, int32_t rpm, uint16_t voltage, uint16_t current, int16_t esc_temp, uint16_t current_tot, int16_t motor_temp)
+void AP_Logger::Write_ESC(uint8_t instance, uint64_t time_us, int32_t rpm, uint16_t voltage, uint16_t current, int16_t esc_temp, uint16_t current_tot, int16_t motor_temp)
 {
-    // sanity check id
-    if (id >= 8) {
-        return;
-    }
     const struct log_Esc pkt{
-        LOG_PACKET_HEADER_INIT(uint8_t(LOG_ESC1_MSG+id)),
+        LOG_PACKET_HEADER_INIT(uint8_t(LOG_ESC_MSG)),
         time_us     : time_us,
+        instance    : instance,
         rpm         : rpm,
         voltage     : voltage,
         current     : current,
@@ -798,6 +781,43 @@ void AP_Logger::Write_ESC(uint8_t id, uint64_t time_us, int32_t rpm, uint16_t vo
     };
     WriteBlock(&pkt, sizeof(pkt));
 }
+
+/*
+  write servo status from CAN servo
+ */
+void AP_Logger::Write_ServoStatus(uint64_t time_us, uint8_t id, float position, float force, float speed, uint8_t power_pct)
+{
+    const struct log_CSRV pkt {
+        LOG_PACKET_HEADER_INIT(LOG_CSRV_MSG),
+        time_us     : time_us,
+        id          : id,
+        position    : position,
+        force       : force,
+        speed       : speed,
+        power_pct   : power_pct
+    };
+    WriteBlock(&pkt, sizeof(pkt));
+}
+
+/*
+  write ESC status from CAN ESC
+ */
+void AP_Logger::Write_ESCStatus(uint64_t time_us, uint8_t id, uint32_t error_count, float voltage, float current, float temperature, int32_t rpm, uint8_t power_pct)
+{
+    const struct log_CESC pkt {
+        LOG_PACKET_HEADER_INIT(LOG_CESC_MSG),
+        time_us     : time_us,
+        id          : id,
+        error_count : error_count,
+        voltage     : voltage,
+        current     : current,
+        temperature : temperature,
+        rpm         : rpm,
+        power_pct   : power_pct
+    };
+    WriteBlock(&pkt, sizeof(pkt));
+}
+
 
 // Write a Yaw PID packet
 void AP_Logger::Write_PID(uint8_t msg_type, const PID_Info &info)
@@ -831,11 +851,16 @@ void AP_Logger::Write_Origin(uint8_t origin_type, const Location &loc)
 
 void AP_Logger::Write_RPM(const AP_RPM &rpm_sensor)
 {
+    float rpm1 = -1, rpm2 = -1;
+
+    rpm_sensor.get_rpm(0, rpm1);
+    rpm_sensor.get_rpm(1, rpm2);
+
     const struct log_RPM pkt{
         LOG_PACKET_HEADER_INIT(LOG_RPM_MSG),
         time_us     : AP_HAL::micros64(),
-        rpm1        : rpm_sensor.get_rpm(0),
-        rpm2        : rpm_sensor.get_rpm(1)
+        rpm1        : rpm1,
+        rpm2        : rpm2
     };
     WriteBlock(&pkt, sizeof(pkt));
 }
@@ -883,6 +908,44 @@ void AP_Logger::Write_VisualOdom(float time_delta, const Vector3f &angle_delta, 
         confidence          : confidence
     };
     WriteBlock(&pkt_visualodom, sizeof(log_VisualOdom));
+}
+
+// Write visual position sensor data.  x,y,z are in meters, angles are in degrees
+void AP_Logger::Write_VisualPosition(uint64_t remote_time_us, uint32_t time_ms, float x, float y, float z, float roll, float pitch, float yaw, float pos_err, float ang_err, uint8_t reset_counter)
+{
+    const struct log_VisualPosition pkt_visualpos {
+        LOG_PACKET_HEADER_INIT(LOG_VISUALPOS_MSG),
+        time_us         : AP_HAL::micros64(),
+        remote_time_us  : remote_time_us,
+        time_ms         : time_ms,
+        pos_x           : x,
+        pos_y           : y,
+        pos_z           : z,
+        roll            : roll,
+        pitch           : pitch,
+        yaw             : yaw,
+        pos_err         : pos_err,
+        ang_err         : ang_err,
+        reset_counter   : reset_counter
+    };
+    WriteBlock(&pkt_visualpos, sizeof(log_VisualPosition));
+}
+
+// Write visual velocity sensor data, velocity in NED meters per second
+void AP_Logger::Write_VisualVelocity(uint64_t remote_time_us, uint32_t time_ms, const Vector3f &vel, float vel_err, uint8_t reset_counter)
+{
+    const struct log_VisualVelocity pkt_visualvel {
+        LOG_PACKET_HEADER_INIT(LOG_VISUALVEL_MSG),
+        time_us         : AP_HAL::micros64(),
+        remote_time_us  : remote_time_us,
+        time_ms         : time_ms,
+        vel_x           : vel.x,
+        vel_y           : vel.y,
+        vel_z           : vel.z,
+        vel_err         : vel_err,
+        reset_counter   : reset_counter
+    };
+    WriteBlock(&pkt_visualvel, sizeof(log_VisualVelocity));
 }
 
 // Write AOA and SSA

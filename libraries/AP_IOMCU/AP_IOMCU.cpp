@@ -64,7 +64,7 @@ AP_IOMCU *AP_IOMCU::singleton;
 void AP_IOMCU::init(void)
 {
     // uart runs at 1.5MBit
-    uart.begin(1500*1000, 256, 256);
+    uart.begin(1500*1000, 128, 128);
     uart.set_blocking_writes(true);
     uart.set_unbuffered_writes(true);
 
@@ -100,7 +100,7 @@ void AP_IOMCU::thread_main(void)
     thread_ctx = chThdGetSelfX();
     chEvtSignal(thread_ctx, initial_event_mask);
 
-    uart.begin(1500*1000, 256, 256);
+    uart.begin(1500*1000, 128, 128);
     uart.set_blocking_writes(true);
     uart.set_unbuffered_writes(true);
 
@@ -300,8 +300,14 @@ void AP_IOMCU::read_status()
 {
     uint16_t *r = (uint16_t *)&reg_status;
     if (!read_registers(PAGE_STATUS, 0, sizeof(reg_status)/2, r)) {
+        read_status_errors++;
         return;
     }
+    if (read_status_ok == 0) {
+        // reset error count on first good read
+        read_status_errors = 0;
+    }
+    read_status_ok++;
 
     check_iomcu_reset();
 
@@ -329,6 +335,15 @@ void AP_IOMCU::read_status()
     if (now - last_log_ms >= 1000U) {
         last_log_ms = now;
         if (AP_Logger::get_singleton()) {
+// @LoggerMessage: IOMC
+// @Description: IOMCU diagnostic information
+// @Field: TimeUS: Time since system startup
+// @Field: Mem: Free memory
+// @Field: TS: IOMCU uptime
+// @Field: NPkt: Number of packets received by IOMCU
+// @Field: Nerr: Protocol failures on MCU side
+// @Field: Nerr2: Reported number of failures on IOMCU side
+// @Field: NDel: Number of delayed packets received by MCU
             AP::logger().Write("IOMC", "TimeUS,Mem,TS,NPkt,Nerr,Nerr2,NDel", "QHIIIII",
                                AP_HAL::micros64(),
                                reg_status.freemem,
@@ -374,10 +389,7 @@ void AP_IOMCU::read_servo()
  */
 void AP_IOMCU::discard_input(void)
 {
-    uint32_t n = uart.available();
-    while (n--) {
-        uart.read();
-    }
+    uart.discard_input();
 }
 
 /*
@@ -449,6 +461,7 @@ bool AP_IOMCU::read_registers(uint8_t page, uint8_t offset, uint8_t count, uint1
     if (!uart.wait_timeout(count*2+4, 10)) {
         debug("t=%u timeout read page=%u offset=%u count=%u\n",
               AP_HAL::millis(), page, offset, count);
+        protocol_fail_count++;
         return false;
     }
 
@@ -861,7 +874,7 @@ void AP_IOMCU::set_safety_mask(uint16_t chmask)
  */
 bool AP_IOMCU::healthy(void)
 {
-    return crc_is_ok && protocol_fail_count == 0 && !detected_io_reset;
+    return crc_is_ok && protocol_fail_count == 0 && !detected_io_reset && read_status_errors < read_status_ok/128U;
 }
 
 /*
@@ -971,7 +984,7 @@ void AP_IOMCU::handle_repeated_failures(void)
         // initial sync with IOMCU
         return;
     }
-    AP::internalerror().error(AP_InternalError::error_t::iomcu_fail);
+    INTERNAL_ERROR(AP_InternalError::error_t::iomcu_fail);
 }
 
 /*
@@ -993,9 +1006,16 @@ void AP_IOMCU::check_iomcu_reset(void)
         return;
     }
     detected_io_reset = true;
-    AP::internalerror().error(AP_InternalError::error_t::iomcu_reset);
+    INTERNAL_ERROR(AP_InternalError::error_t::iomcu_reset);
     hal.console->printf("IOMCU reset t=%u %u %u dt=%u\n",
                         unsigned(AP_HAL::millis()), unsigned(ts1), unsigned(reg_status.timestamp_ms), unsigned(dt_ms));
+
+    if (safety_forced_off && !reg_status.flag_safety_off && hal.util->get_soft_armed()) {
+        // IOMCU has reset while armed with safety off - force it off
+        // again so we can keep flying
+        force_safety_off();
+    }
+
     // we need to ensure the mixer data and the rates are sent over to
     // the IOMCU
     if (mixing.enabled) {

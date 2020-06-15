@@ -53,7 +53,7 @@ public:
         ANALOG = 1,
         MBI2C  = 2,
         PLI2C  = 3,
-        PX4    = 4,
+//        PX4    = 4, // no longer used, but may be in some user's parameters
         PX4_PWM= 5,
         BBB_PRU= 6,
         LWI2C  = 7,
@@ -77,6 +77,9 @@ public:
         BenewakeTFminiPlus = 25,
         Lanbao = 26,
         BenewakeTF03 = 27,
+        VL53L1X_Short = 28,
+        LeddarVu8_Serial = 29,
+        HC_SR04 = 30,
     };
 
     enum class Function {
@@ -137,6 +140,16 @@ public:
 
     AP_RangeFinder_Backend *get_backend(uint8_t id) const;
 
+    // get rangefinder type for an ID
+    Type get_type(uint8_t id) const {
+        return id >= RANGEFINDER_MAX_INSTANCES? Type::NONE : Type(params[id].type.get());
+    }
+
+    // get rangefinder address (for AP_Periph CAN)
+    uint8_t get_address(uint8_t id) const {
+        return id >= RANGEFINDER_MAX_INSTANCES? 0 : uint8_t(params[id].address.get());
+    }
+    
     // methods to return a distance on a particular orientation from
     // any sensor which can current supply it
     uint16_t distance_cm_orient(enum Rotation orientation) const;
@@ -173,6 +186,8 @@ private:
     RangeFinder_State state[RANGEFINDER_MAX_INSTANCES];
     AP_RangeFinder_Backend *drivers[RANGEFINDER_MAX_INSTANCES];
     uint8_t num_instances;
+    bool init_done;
+    HAL_Semaphore detect_sem;
     float estimated_terrain_height;
     Vector3f pos_offset_zero;   // allows returning position offsets of zero for invalid requests
 

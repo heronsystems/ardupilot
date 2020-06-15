@@ -82,9 +82,9 @@ void Submarine::calculate_forces(const struct sitl_input &input, Vector3f &rot_a
             output = (pwm - 1500) / 400.0; // range -1~1
         }
 
-        // 2.5 scalar for approximate real-life performance of T200 thruster
-        body_accel += t.linear * output * frame_property.thrust / frame_property.weight;
-        rot_accel += t.rotational * output * frame_property.thrust * frame_property.thruster_mount_radius / frame_property.moment_of_inertia;
+        float thrust = output * fabs(output) * frame_property.thrust; // approximate pwm to thrust function using a quadratic curve
+        body_accel += t.linear * thrust / frame_property.weight;
+        rot_accel += t.rotational * thrust * frame_property.thruster_mount_radius / frame_property.moment_of_inertia;
     }
 
     float floor_depth = calculate_sea_floor_depth(position);
@@ -215,11 +215,11 @@ float Submarine::calculate_buoyancy_acceleration()
 
     // Completely below water level
     if (below_water_level > frame_property.height/2) {
-        return frame_property.buoyancy_acceleration;
+        return GRAVITY_MSS + sitl->buoyancy / frame_property.mass;
     }
 
     // bouyant force is proportional to fraction of height in water
-    return frame_property.buoyancy_acceleration * below_water_level/frame_property.height;
+    return GRAVITY_MSS + (sitl->buoyancy * below_water_level/frame_property.height) / frame_property.mass;
 };
 
 /*

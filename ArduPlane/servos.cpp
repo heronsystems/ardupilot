@@ -343,6 +343,38 @@ void Plane::set_servos_manual_passthrough(void)
 }
 
 /*
+  Scale the throttle to conpensate for battery voltage drop
+ */
+void Plane::throttle_voltage_comp()
+{
+    // return if not enabled, or setup incorrectly
+    if (g2.fwd_thr_batt_voltage_min >= g2.fwd_thr_batt_voltage_max || !is_positive(g2.fwd_thr_batt_voltage_max)) {
+        return;
+    }
+
+    float batt_voltage_resting_estimate = AP::battery().voltage_resting_estimate(g2.fwd_thr_batt_idx);
+    // Return for a very low battery
+    if (batt_voltage_resting_estimate < 0.25f * g2.fwd_thr_batt_voltage_min) {
+        return;
+    }
+
+    // constrain read voltage to min and max params
+    batt_voltage_resting_estimate = constrain_float(batt_voltage_resting_estimate,g2.fwd_thr_batt_voltage_min,g2.fwd_thr_batt_voltage_max);
+
+    // don't apply compensation if the voltage is excessively low
+    if (batt_voltage_resting_estimate < 1) {
+        return;
+    }
+
+    // Scale the throttle up to compensate for voltage drop
+    // Ratio = 1 when voltage = voltage max, ratio increases as voltage drops
+    const float ratio = g2.fwd_thr_batt_voltage_max / batt_voltage_resting_estimate;
+
+    SRV_Channels::set_output_scaled(SRV_Channel::k_throttle,
+                                        constrain_int16(SRV_Channels::get_output_scaled(SRV_Channel::k_throttle) * ratio, -100, 100));
+}
+
+/*
   calculate any throttle limits based on the watt limiter
  */
 void Plane::throttle_watt_limiter(int8_t &min_throttle, int8_t &max_throttle)
@@ -421,10 +453,13 @@ void Plane::set_servos_controlled(void)
     } else if (landing.is_flaring()) {
         min_throttle = 0;
     }
-    
+
+    // conpensate for battery voltage drop
+    throttle_voltage_comp();
+
     // apply watt limiter
     throttle_watt_limiter(min_throttle, max_throttle);
-    
+
     SRV_Channels::set_output_scaled(SRV_Channel::k_throttle,
                                     constrain_int16(SRV_Channels::get_output_scaled(SRV_Channel::k_throttle), min_throttle, max_throttle));
     
@@ -439,8 +474,11 @@ void Plane::set_servos_controlled(void)
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttleRight, 0);
         }
     } else if (suppress_throttle()) {
-        // throttle is suppressed in auto mode
-        SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, 0);
+        SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, 0 ); // default
+        // throttle is suppressed (above) to zero in final flare in auto mode, but we allow instead thr_min if user prefers, eg turbines:
+        if (landing.is_flaring() && landing.use_thr_min_during_flare() ) {
+            SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, aparm.throttle_min.get());
+        }
         if (g.throttle_suppress_manual) {
             // manual pass through of throttle while throttle is suppressed
             SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, get_throttle_input(true));
@@ -470,16 +508,6 @@ void Plane::set_servos_controlled(void)
         SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, 
             constrain_int16(quadplane.forward_throttle_pct(), min_throttle, max_throttle));
     }
-
-#if SOARING_ENABLED == ENABLED
-    // suppress throttle when soaring is active
-    if ((control_mode == &mode_fbwb || control_mode == &mode_cruise ||
-        control_mode == &mode_auto || control_mode == &mode_loiter) &&
-        g2.soaring_controller.is_active() &&
-        g2.soaring_controller.get_throttle_suppressed()) {
-        SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, 0);
-    }
-#endif
 }
 
 /*
@@ -492,7 +520,7 @@ void Plane::set_servos_flaps(void)
     int8_t manual_flap_percent = 0;
 
     // work out any manual flap input
-    RC_Channel *flapin = RC_Channels::rc_channel(g.flapin_channel-1);
+    RC_Channel *flapin = rc().find_channel_for_option(RC_Channel::AUX_FUNC::FLAP);
     if (flapin != nullptr && !failsafe.rc_failsafe && failsafe.throttle_counter == 0) {
         manual_flap_percent = flapin->percent_input();
     }
@@ -510,17 +538,12 @@ void Plane::set_servos_flaps(void)
             auto_flap_percent = g.flap_1_percent;
         } //else flaps stay at default zero deflection
 
-        if (flight_stage == AP_Vehicle::FixedWing::FLIGHT_LAND && landing.get_flap_percent() != 0) {
-            auto_flap_percent = landing.get_flap_percent();
-        }
-
         /*
           special flap levels for takeoff and landing. This works
           better than speed based flaps as it leads to less
           possibility of oscillation
          */
-        if (control_mode == &mode_auto) {
-            switch (flight_stage) {
+        switch (flight_stage) {
             case AP_Vehicle::FixedWing::FLIGHT_TAKEOFF:
             case AP_Vehicle::FixedWing::FLIGHT_ABORT_LAND:
                 if (g.takeoff_flap_percent != 0) {
@@ -533,9 +556,13 @@ void Plane::set_servos_flaps(void)
                     auto_flap_percent = g.takeoff_flap_percent;
                 }
                 break;
+            case AP_Vehicle::FixedWing::FLIGHT_LAND:
+                if (landing.get_flap_percent() != 0) {
+                  auto_flap_percent = landing.get_flap_percent();
+                }
+                break;
             default:
                 break;
-            }
         }
     }
 
@@ -558,46 +585,23 @@ void Plane::set_servos_flaps(void)
 
 #if LANDING_GEAR_ENABLED == ENABLED
 /*
-  change and report landing gear
- */
-void Plane::change_landing_gear(AP_LandingGear::LandingGearCommand cmd)
-{
-    if (cmd != (AP_LandingGear::LandingGearCommand)gear.last_cmd) {
-        if (SRV_Channels::function_assigned(SRV_Channel::k_landing_gear_control)) {
-            g2.landing_gear.set_position(cmd);
-            gcs().send_text(MAV_SEVERITY_INFO, "LandingGear: %s", cmd==AP_LandingGear::LandingGear_Retract?"RETRACT":"DEPLOY");
-        }
-        gear.last_cmd = (int8_t)cmd;
-    }
-}
-
-/*
   setup landing gear state
  */
 void Plane::set_landing_gear(void)
 {
-    if (control_mode == &mode_auto && hal.util->get_soft_armed() && is_flying()) {
-        AP_LandingGear::LandingGearCommand cmd = (AP_LandingGear::LandingGearCommand)gear.last_auto_cmd;
+    if (control_mode == &mode_auto && hal.util->get_soft_armed() && is_flying() && gear.last_flight_stage != flight_stage) {
         switch (flight_stage) {
         case AP_Vehicle::FixedWing::FLIGHT_LAND:
-            cmd = AP_LandingGear::LandingGear_Deploy;
+            g2.landing_gear.deploy_for_landing();
             break;
         case AP_Vehicle::FixedWing::FLIGHT_NORMAL:
-            cmd = AP_LandingGear::LandingGear_Retract;
-            break;
-        case AP_Vehicle::FixedWing::FLIGHT_VTOL:
-            if (quadplane.is_vtol_land(mission.get_current_nav_cmd().id)) {
-                cmd = AP_LandingGear::LandingGear_Deploy;
-            }
+            g2.landing_gear.retract_after_takeoff();
             break;
         default:
             break;
         }
-        if (cmd != gear.last_auto_cmd) {
-            gear.last_auto_cmd = (int8_t)cmd;
-            change_landing_gear(cmd);
-        }
     }
+    gear.last_flight_stage = flight_stage;
 }
 #endif // LANDING_GEAR_ENABLED
 
@@ -832,9 +836,6 @@ void Plane::servos_output(void)
     quadplane.tailsitter_output();
     quadplane.tiltrotor_bicopter();
 
-    // the mixers need pwm to be calculated now
-    SRV_Channels::calc_pwm();
-
     // run vtail and elevon mixers
     servo_output_mixers();
 
@@ -908,7 +909,7 @@ void Plane::servos_auto_trim(void)
     g2.servo_channels.adjust_trim(SRV_Channel::k_vtail_right, pitch_I);
 
     g2.servo_channels.adjust_trim(SRV_Channel::k_flaperon_left,  roll_I);
-    g2.servo_channels.adjust_trim(SRV_Channel::k_flaperon_right, -roll_I);
+    g2.servo_channels.adjust_trim(SRV_Channel::k_flaperon_right, roll_I);
 
     // cope with various dspoiler options
     const int8_t bitmask = g2.crow_flap_options.get();

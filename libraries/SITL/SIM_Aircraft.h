@@ -47,6 +47,7 @@ public:
       set simulation speedup
      */
     void set_speedup(float speedup);
+    float get_speedup() { return target_speedup; }
 
     /*
       set instance number
@@ -83,6 +84,16 @@ public:
 
     // get frame rate of model in Hz
     float get_rate_hz(void) const { return rate_hz; }
+
+    // get number of motors for model
+    uint16_t get_num_motors() const {
+        return num_motors;
+    }
+
+    // get motor offset for model
+    virtual uint16_t get_motors_offset() const {
+        return 0;
+    }
 
     const Vector3f &get_gyro(void) const {
         return gyro;
@@ -141,8 +152,6 @@ protected:
     float frame_height;
     Matrix3f dcm;                        // rotation matrix, APM conventions, from body to earth
     Vector3f gyro;                       // rad/s
-    Vector3f gyro_prev;                  // rad/s
-    Vector3f ang_accel;                  // rad/s/s
     Vector3f velocity_ef;                // m/s, earth frame
     Vector3f wind_ef;                    // m/s, earth frame
     Vector3f velocity_air_ef;            // velocity relative to airmass, earth frame
@@ -155,8 +164,8 @@ protected:
     float airspeed_pitot;                // m/s, apparent airspeed, as seen by fwd pitot tube
     float battery_voltage = -1.0f;
     float battery_current = 0.0f;
-    float rpm1 = 0;
-    float rpm2 = 0;
+    uint8_t num_motors = 1;
+    float rpm[12];
     uint8_t rcin_chan_count = 0;
     float rcin[8];
     float range = -1.0f;                 // rangefinder detection in m
@@ -179,11 +188,12 @@ protected:
     const float gyro_noise;
     const float accel_noise;
     float rate_hz;
-    float achieved_rate_hz;
     float target_speedup;
     uint64_t frame_time_us;
-    float scaled_frame_time_us;
     uint64_t last_wall_time_us;
+    uint32_t last_fps_report_ms;
+    int64_t sleep_debt_us;
+    uint32_t last_frame_count;
     uint8_t instance;
     const char *autotest_dir;
     const char *frame;
@@ -193,6 +203,10 @@ protected:
 
     // allow for AHRS_ORIENTATION
     AP_Int8 *ahrs_orientation;
+    enum Rotation last_imu_rotation;
+    AP_Float* custom_roll;
+    AP_Float* custom_pitch;
+    AP_Float* custom_yaw;
 
     enum GroundBehaviour {
         GROUND_BEHAVIOR_NONE = 0,
@@ -233,7 +247,7 @@ protected:
     /* add noise based on throttle level (from 0..1) */
     void add_noise(float throttle);
 
-    /* return wall clock time in microseconds since 1970 */
+    /* return a monotonic wall clock time in microseconds */
     uint64_t get_wall_time_us(void) const;
 
     // update attitude and relative position
@@ -256,6 +270,9 @@ protected:
     void add_shove_forces(Vector3f &rot_accel, Vector3f &body_accel);
     void add_twist_forces(Vector3f &rot_accel);
 
+    // get local thermal updraft
+    float get_local_updraft(Vector3f currentPos);
+
 private:
     uint64_t last_time_us = 0;
     uint32_t frame_counter = 0;
@@ -263,7 +280,6 @@ private:
     const uint32_t min_sleep_time;
 
     struct {
-        bool enabled;
         Vector3f accel_body;
         Vector3f gyro;
         Matrix3f rotation_b2e;

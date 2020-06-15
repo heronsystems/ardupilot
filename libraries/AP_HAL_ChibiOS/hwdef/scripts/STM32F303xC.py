@@ -21,7 +21,9 @@ mcu = {
     'RAM_MAP' : [
         (0x20000000,  40, 1), # main memory, DMA safe
         (0x10000000,   8, 2), # CCM memory, faster, but not DMA safe
-    ]
+    ],
+
+    'EXPECTED_CLOCK' : 72000000
 }
 
 AltFunction_map = {
@@ -433,8 +435,8 @@ DMA_Map = {
     "USART3_RX" :   [(1,3,0)],
     "USART1_TX" :   [(1,4,0)],
     "USART1_RX" :   [(1,5,0)],
-    "USART2_TX" :   [(1,6,0)],
-    "USART2_RX" :   [(1,7,0)],
+    "USART2_RX" :   [(1,6,0)],
+    "USART2_TX" :   [(1,7,0)],
     "I2C2_TX"   :   [(1,4,0)],
     "I2C2_RX"   :   [(1,5,0)],
     "I2C1_TX"   :   [(1,6,0)],

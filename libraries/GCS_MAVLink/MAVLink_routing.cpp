@@ -214,7 +214,7 @@ void MAVLink_routing::send_to_components(const char *pkt, const mavlink_msg_entr
         }
 #if ROUTING_DEBUG
         ::printf("send msg %u on chan %u sysid=%u compid=%u\n",
-                 msg.msgid,
+                 entry->msgid,
                  (unsigned)routes[i].channel,
                  (unsigned)routes[i].sysid,
                  (unsigned)routes[i].compid);
@@ -301,8 +301,8 @@ void MAVLink_routing::learn_route(mavlink_channel_t in_channel, const mavlink_me
 */
 void MAVLink_routing::handle_heartbeat(mavlink_channel_t in_channel, const mavlink_message_t &msg)
 {
-    uint16_t mask = GCS_MAVLINK::active_channel_mask();
-    
+    uint16_t mask = GCS_MAVLINK::active_channel_mask() & ~GCS_MAVLINK::private_channel_mask();
+
     // don't send on the incoming channel. This should only matter if
     // the routing table is full
     mask &= ~(1U<<(in_channel-MAVLINK_COMM_0));

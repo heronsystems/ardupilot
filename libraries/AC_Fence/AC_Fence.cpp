@@ -2,10 +2,11 @@
 
 #include <AP_AHRS/AP_AHRS.h>
 #include <AP_HAL/AP_HAL.h>
+#include <AP_Logger/AP_Logger.h>
 
 extern const AP_HAL::HAL& hal;
 
-#if APM_BUILD_TYPE(APM_BUILD_APMrover2)
+#if APM_BUILD_TYPE(APM_BUILD_Rover)
 #define AC_FENCE_TYPE_DEFAULT AC_FENCE_TYPE_CIRCLE | AC_FENCE_TYPE_POLYGON
 #else
 #define AC_FENCE_TYPE_DEFAULT AC_FENCE_TYPE_ALT_MAX | AC_FENCE_TYPE_CIRCLE | AC_FENCE_TYPE_POLYGON
@@ -31,6 +32,7 @@ const AP_Param::GroupInfo AC_Fence::var_info[] = {
     // @DisplayName: Fence Action
     // @Description: What action should be taken when fence is breached
     // @Values{Copter}: 0:Report Only,1:RTL or Land,2:Always Land,3:SmartRTL or RTL or Land,4:Brake or Land
+    // @Values{Rover}: 0:Report Only,1:RTL,2:Hold,3:SmartRTL,4:SmartRTL or Hold
     // @Values: 0:Report Only,1:RTL or Land
     // @User: Standard
     AP_GROUPINFO("ACTION",      2,  AC_Fence,   _action,        AC_FENCE_ACTION_RTL_AND_LAND),
@@ -94,6 +96,11 @@ AC_Fence::AC_Fence()
 /// enable the Fence code generally; a master switch for all fences
 void AC_Fence::enable(bool value)
 {
+    if (_enabled && !value) {
+        AP::logger().Write_Event(LogEvent::FENCE_DISABLE);
+    } else if (!_enabled && value) {
+        AP::logger().Write_Event(LogEvent::FENCE_ENABLE);
+    }
     _enabled = value;
     if (!value) {
         clear_breach(AC_FENCE_TYPE_ALT_MAX | AC_FENCE_TYPE_CIRCLE | AC_FENCE_TYPE_POLYGON);

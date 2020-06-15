@@ -159,6 +159,7 @@ enum class LogErrorCode : uint8_t {
     RESTARTED_RTL = 3,
     FAILED_CIRCLE_INIT = 4,
     DEST_OUTSIDE_FENCE = 5,
+    RTL_MISSING_RNGFND = 6,
 
 // parachute failed to deploy because of low altitude or landed
     PARACHUTE_TOO_LOW = 2,
@@ -258,6 +259,8 @@ public:
     void Write_Camera(const Location &current_loc, uint64_t timestamp_us=0);
     void Write_Trigger(const Location &current_loc);
     void Write_ESC(uint8_t id, uint64_t time_us, int32_t rpm, uint16_t voltage, uint16_t current, int16_t esc_temp, uint16_t current_tot, int16_t motor_temp);
+    void Write_ServoStatus(uint64_t time_us, uint8_t id, float position, float force, float speed, uint8_t power_pct);
+    void Write_ESCStatus(uint64_t time_us, uint8_t id, uint32_t error_count, float voltage, float current, float temperature, int32_t rpm, uint8_t power_pct);
     void Write_Attitude(const Vector3f &targets);
     void Write_AttitudeView(AP_AHRS_View &ahrs, const Vector3f &targets);
     void Write_Current();
@@ -278,6 +281,8 @@ public:
                           uint8_t sequence,
                           const RallyLocation &rally_point);
     void Write_VisualOdom(float time_delta, const Vector3f &angle_delta, const Vector3f &position_delta, float confidence);
+    void Write_VisualPosition(uint64_t remote_time_us, uint32_t time_ms, float x, float y, float z, float roll, float pitch, float yaw, float pos_err, float ang_err, uint8_t reset_counter);
+    void Write_VisualVelocity(uint64_t remote_time_us, uint32_t time_ms, const Vector3f &vel, float vel_err, uint8_t reset_counter);
     void Write_AOA_SSA(AP_AHRS &ahrs);
     void Write_Beacon(AP_Beacon &beacon);
     void Write_Proximity(AP_Proximity &proximity);
@@ -338,6 +343,7 @@ public:
         AP_Int8 log_replay;
         AP_Int8 mav_bufsize; // in kilobytes
         AP_Int16 file_timeout; // in seconds
+        AP_Int16 min_MB_free;
     } _params;
 
     const struct LogStructure *structure(uint16_t num) const;
@@ -359,13 +365,40 @@ public:
     bool vehicle_is_armed() const { return _armed; }
 
     void handle_log_send();
-    bool in_log_download() const { return transfer_activity != IDLE; }
+    bool in_log_download() const {
+        return transfer_activity != TransferActivity::IDLE;
+    }
 
     float quiet_nanf() const { return nanf("0x4152"); } // "AR"
     double quiet_nan() const { return nan("0x4152445550490a"); } // "ARDUPI"
 
     // returns true if msg_type is associated with a message
     bool msg_type_in_use(uint8_t msg_type) const;
+
+    // calculate the length of a message using fields specified in
+    // fmt; includes the message header
+    int16_t Write_calc_msg_len(const char *fmt) const;
+
+    // this structure looks much like struct LogStructure in
+    // LogStructure.h, however we need to remember a pointer value for
+    // efficiency of finding message types
+    struct log_write_fmt {
+        struct log_write_fmt *next;
+        uint8_t msg_type;
+        uint8_t msg_len;
+        uint8_t sent_mask; // bitmask of backends sent to
+        const char *name;
+        const char *fmt;
+        const char *labels;
+        const char *units;
+        const char *mults;
+    } *log_write_fmts;
+
+    // return (possibly allocating) a log_write_fmt for a name
+    struct log_write_fmt *msg_fmt_for_name(const char *name, const char *labels, const char *units, const char *mults, const char *fmt, const bool direct_comp = false);
+
+    // output a FMT message for each backend if not already done so
+    void Safe_Write_Emit_FMT(log_write_fmt *f);
 
 protected:
 
@@ -399,24 +432,9 @@ private:
      * support for dynamic Write; user-supplies name, format,
      * labels and values in a single function call.
      */
-
-    // this structure looks much like struct LogStructure in
-    // LogStructure.h, however we need to remember a pointer value for
-    // efficiency of finding message types
-    struct log_write_fmt {
-        struct log_write_fmt *next;
-        uint8_t msg_type;
-        uint8_t msg_len;
-        uint8_t sent_mask; // bitmask of backends sent to
-        const char *name;
-        const char *fmt;
-        const char *labels;
-        const char *units;
-        const char *mults;
-    } *log_write_fmts;
+    HAL_Semaphore log_write_fmts_sem;
 
     // return (possibly allocating) a log_write_fmt for a name
-    struct log_write_fmt *msg_fmt_for_name(const char *name, const char *labels, const char *units, const char *mults, const char *fmt);
     const struct log_write_fmt *log_write_fmt_for_msg_type(uint8_t msg_type) const;
 
     const struct LogStructure *structure_for_msg_type(uint8_t msg_type);
@@ -427,10 +445,6 @@ private:
     // fill LogStructure with information about msg_type
     bool fill_log_write_logstructure(struct LogStructure &logstruct, const uint8_t msg_type) const;
 
-    // calculate the length of a message using fields specified in
-    // fmt; includes the message header
-    int16_t Write_calc_msg_len(const char *fmt) const;
-
     bool _armed;
 
     void Write_Baro_instance(uint64_t time_us, uint8_t baro_instance, enum LogMessages type);
@@ -440,10 +454,7 @@ private:
     void Write_Compass_instance(uint64_t time_us,
                                     uint8_t mag_instance,
                                     enum LogMessages type);
-    void Write_Current_instance(uint64_t time_us,
-                                    uint8_t battery_instance,
-                                    enum LogMessages type,
-                                    enum LogMessages celltype);
+    void Write_Current_instance(uint64_t time_us, uint8_t battery_instance);
     void Write_IMUDT_instance(uint64_t time_us,
                                   uint8_t imu_instance,
                                   enum LogMessages type);
@@ -466,6 +477,7 @@ private:
     const char* unit_name(const uint8_t unit_id);
     double multiplier_name(const uint8_t multiplier_id);
     bool seen_ids[256] = { };
+    bool labels_string_is_good(const char *labels) const;
 #endif
 
     // possibly expensive calls to start log system:
@@ -476,11 +488,11 @@ private:
 
     /* support for retrieving logs via mavlink: */
 
-    enum transfer_activity_t : uint8_t {
+    enum class TransferActivity {
         IDLE,    // not doing anything, all file descriptors closed
         LISTING, // actively sending log_entry packets
         SENDING, // actively sending log_sending packets
-    } transfer_activity = IDLE;
+    } transfer_activity = TransferActivity::IDLE;
 
     // next log list entry to send
     uint16_t _log_next_list_entry;
@@ -507,7 +519,7 @@ private:
     uint32_t _log_data_page;
 
     GCS_MAVLINK *_log_sending_link;
-    HAL_Semaphore_Recursive _log_send_sem;
+    HAL_Semaphore _log_send_sem;
 
     // last time arming failed, for backends
     uint32_t _last_arming_failure_ms;

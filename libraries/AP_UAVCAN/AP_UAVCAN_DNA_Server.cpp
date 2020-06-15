@@ -258,6 +258,8 @@ bool AP_UAVCAN_DNA_Server::init(AP_UAVCAN *ap_uavcan)
         return false;
     }
 
+    WITH_SEMAPHORE(sem);
+
     //Read the details from ap_uavcan
     uavcan::Node<0>* _node = ap_uavcan->get_node();
     uint8_t node_id = _node->getNodeID().get();
@@ -418,6 +420,8 @@ seen list, So that we can raise issue if there are duplicates
 on the bus. */
 void AP_UAVCAN_DNA_Server::verify_nodes(AP_UAVCAN *ap_uavcan)
 {
+    WITH_SEMAPHORE(sem);
+
     uint32_t now = AP_HAL::millis();
     if ((now - last_verification_request) < 5000) {
         return;
@@ -438,7 +442,6 @@ void AP_UAVCAN_DNA_Server::verify_nodes(AP_UAVCAN *ap_uavcan)
         /* Only report if the node was verified, otherwise ignore
         as this could be just Bootloader to Application transition. */
         if (isNodeIDVerified(curr_verifying_node)) {
-            gcs().send_text(MAV_SEVERITY_ERROR, "UC Node %d Down!", curr_verifying_node);
             // remove verification flag for this node
             verified_mask.clear(curr_verifying_node);
         }
@@ -469,6 +472,7 @@ void AP_UAVCAN_DNA_Server::handleNodeStatus(uint8_t node_id, const NodeStatusCb 
     if (node_id > MAX_NODE_ID) {
         return;
     }
+    WITH_SEMAPHORE(sem);
     if (!isNodeIDVerified(node_id)) {
         //immediately begin verification of the node_id
         for (uint8_t i = 0; i < MAX_NUMBER_OF_CAN_DRIVERS; i++) {
@@ -503,6 +507,7 @@ void AP_UAVCAN_DNA_Server::handleNodeInfo(uint8_t node_id, uint8_t unique_id[], 
     if (node_id > MAX_NODE_ID) {
         return;
     }
+    WITH_SEMAPHORE(sem);
     if (isNodeIDOccupied(node_id)) {
         //if node_id already registered, just verify if Unique ID matches as well
         if (node_id == getNodeIDForUniqueID(unique_id, 16)) {
@@ -547,7 +552,7 @@ void trampoline_handleNodeInfo(const uavcan::ServiceCallResult<uavcan::protocol:
     uavcan::copy(resp.getResponse().hardware_version.unique_id.begin(),
                  resp.getResponse().hardware_version.unique_id.end(),
                  unique_id);
-    snprintf(name, ARRAY_SIZE(name), "%s", resp.getResponse().name.c_str());
+    strncpy(name, resp.getResponse().name.c_str(), sizeof(name)-1);
     AP::uavcan_dna_server().handleNodeInfo(node_id, unique_id, name);
 }
 
@@ -559,6 +564,7 @@ void AP_UAVCAN_DNA_Server::handleAllocation(uint8_t driver_index, uint8_t node_i
         //init has not been called for this driver.
         return;
     }
+    WITH_SEMAPHORE(sem);
     if (!cb.msg->isAnonymousTransfer()) {
         //Ignore Allocation messages that are not DNA requests
         return;
@@ -640,25 +646,23 @@ void trampoline_handleAllocation(AP_UAVCAN* ap_uavcan, uint8_t node_id, const Al
 //report the server state, along with failure message if any
 bool AP_UAVCAN_DNA_Server::prearm_check(char* fail_msg, uint8_t fail_msg_len) const
 {
-    if (server_state == HEALTHY) {
-        return true;
-    }
     switch (server_state) {
+    case HEALTHY:
+        return true;
     case STORAGE_FAILURE: {
-        snprintf(fail_msg, fail_msg_len, "UC: Failed to access storage!");
+        snprintf(fail_msg, fail_msg_len, "Failed to access storage!");
         return false;
     }
     case DUPLICATE_NODES: {
-        snprintf(fail_msg, fail_msg_len, "UC: Duplicate Node %s../%d!", fault_node_name, fault_node_id);
+        snprintf(fail_msg, fail_msg_len, "Duplicate Node %s../%d!", fault_node_name, fault_node_id);
         return false;
     }
     case FAILED_TO_ADD_NODE: {
-        snprintf(fail_msg, fail_msg_len, "UC: Failed to add Node %d!", fault_node_id);
+        snprintf(fail_msg, fail_msg_len, "Failed to add Node %d!", fault_node_id);
         return false;
     }
-    default:
-        break;
     }
+    // should never get; compiler should enforce all server_states are covered
     return false;
 }
 

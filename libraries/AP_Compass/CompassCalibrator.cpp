@@ -33,7 +33,7 @@
  * origin-centered sphere.
  *
  * The state machine of this library is described entirely by the
- * compass_cal_status_t enum, and all state transitions are managed by the
+ * CompassCalibrator::Status enum, and all state transitions are managed by the
  * set_status function. Normally, the library is in the NOT_STARTED state. When
  * the start function is called, the state transitions to WAITING_TO_START,
  * until two conditions are met: the delay as elapsed, and the memory for the
@@ -57,11 +57,16 @@
  * http://en.wikipedia.org/wiki/Levenberg%E2%80%93Marquardt_algorithm
  */
 
+#include "AP_Compass.h"
 #include "CompassCalibrator.h"
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Math/AP_GeodesicGrid.h>
 #include <AP_AHRS/AP_AHRS.h>
+#include <AP_GPS/AP_GPS.h>
 #include <GCS_MAVLink/GCS.h>
+
+#define FIELD_RADIUS_MIN 150
+#define FIELD_RADIUS_MAX 950
 
 extern const AP_HAL::HAL& hal;
 
@@ -69,71 +74,183 @@ extern const AP_HAL::HAL& hal;
 ///////////////////// PUBLIC INTERFACE /////////////////////
 ////////////////////////////////////////////////////////////
 
-CompassCalibrator::CompassCalibrator():
-    _tolerance(COMPASS_CAL_DEFAULT_TOLERANCE),
-    _sample_buffer(nullptr)
+CompassCalibrator::CompassCalibrator()
 {
-    stop();
+    set_status(Status::NOT_STARTED);
 }
 
+// Request to cancel calibration 
 void CompassCalibrator::stop()
 {
-    set_status(COMPASS_CAL_NOT_STARTED);
+    WITH_SEMAPHORE(state_sem);
+    _requested_status = Status::NOT_STARTED;
+    _status_set_requested = true;
 }
 
 void CompassCalibrator::set_orientation(enum Rotation orientation, bool is_external, bool fix_orientation)
 {
-    _check_orientation = true;
-    _orientation = orientation;
-    _orig_orientation = orientation;
-    _is_external = is_external;
-    _fix_orientation = fix_orientation;
+    WITH_SEMAPHORE(state_sem);
+    cal_settings.check_orientation = true;
+    cal_settings.orientation = orientation;
+    cal_settings.orig_orientation = orientation;
+    cal_settings.is_external = is_external;
+    cal_settings.fix_orientation = fix_orientation;
 }
 
-void CompassCalibrator::start(bool retry, float delay, uint16_t offset_max, uint8_t compass_idx)
+void CompassCalibrator::start(bool retry, float delay, uint16_t offset_max, uint8_t compass_idx, float tolerance)
 {
-    if (running()) {
-        return;
-    }
-    _offset_max = offset_max;
-    _attempt = 1;
-    _retry = retry;
-    _delay_start_sec = delay;
-    _start_time_ms = AP_HAL::millis();
-    _compass_idx = compass_idx;
-    set_status(COMPASS_CAL_WAITING_TO_START);
-}
-
-void CompassCalibrator::get_calibration(Vector3f &offsets, Vector3f &diagonals, Vector3f &offdiagonals)
-{
-    if (_status != COMPASS_CAL_SUCCESS) {
+    if (compass_idx > COMPASS_MAX_INSTANCES) {
         return;
     }
 
-    offsets = _params.offset;
-    diagonals = _params.diag;
-    offdiagonals = _params.offdiag;
+    WITH_SEMAPHORE(state_sem);
+    // Don't do this while we are already started
+    if (_running()) {
+        return;
+    }
+    cal_settings.offset_max = offset_max;
+    cal_settings.attempt = 1;
+    cal_settings.retry = retry;
+    cal_settings.delay_start_sec = delay;
+    cal_settings.start_time_ms = AP_HAL::millis();
+    cal_settings.compass_idx = compass_idx;
+    cal_settings.tolerance = tolerance;
+
+    // Request status change to Waiting to start
+    _requested_status = Status::WAITING_TO_START;
+    _status_set_requested = true;
 }
 
-float CompassCalibrator::get_completion_percent() const
+// Record point mag sample and associated attitude sample to intermediate struct
+void CompassCalibrator::new_sample(const Vector3f& sample)
 {
-    // first sampling step is 1/3rd of the progress bar
-    // never return more than 99% unless _status is COMPASS_CAL_SUCCESS
-    switch (_status) {
-        case COMPASS_CAL_NOT_STARTED:
-        case COMPASS_CAL_WAITING_TO_START:
-            return 0.0f;
-        case COMPASS_CAL_RUNNING_STEP_ONE:
-            return 33.3f * _samples_collected/COMPASS_CAL_NUM_SAMPLES;
-        case COMPASS_CAL_RUNNING_STEP_TWO:
-            return 33.3f + 65.7f*((float)(_samples_collected-_samples_thinned)/(COMPASS_CAL_NUM_SAMPLES-_samples_thinned));
-        case COMPASS_CAL_SUCCESS:
-            return 100.0f;
-        case COMPASS_CAL_FAILED:
-        case COMPASS_CAL_BAD_ORIENTATION:
-        default:
-            return 0.0f;
-    };
+    WITH_SEMAPHORE(sample_sem);
+    _last_sample.set(sample);
+    _last_sample.att.set_from_ahrs();
+    _new_sample = true;
+}
+
+bool CompassCalibrator::failed() {
+    WITH_SEMAPHORE(state_sem);
+    return (cal_state.status == Status::FAILED ||
+            cal_state.status == Status::BAD_ORIENTATION || 
+            cal_state.status == Status::BAD_RADIUS);
+}
+
+
+bool CompassCalibrator::running() {
+    WITH_SEMAPHORE(state_sem); 
+    return (cal_state.status == Status::RUNNING_STEP_ONE || cal_state.status == Status::RUNNING_STEP_TWO);
+}
+
+const CompassCalibrator::Report CompassCalibrator::get_report() {
+    WITH_SEMAPHORE(state_sem);
+    return cal_report;
+}
+
+const CompassCalibrator::State CompassCalibrator::get_state() {
+    WITH_SEMAPHORE(state_sem);
+    return cal_state;
+}
+/////////////////////////////////////////////////////////////
+////////////////////// PRIVATE METHODS //////////////////////
+/////////////////////////////////////////////////////////////
+
+void CompassCalibrator::update()
+{
+
+    //pickup samples from intermediate struct
+    pull_sample();
+
+    {
+        WITH_SEMAPHORE(state_sem);
+        //update_settings
+        if (!running()) {
+            update_cal_settings();
+        }
+
+        //update requested state
+        if (_status_set_requested) {
+            _status_set_requested = false;
+            set_status(_requested_status);
+        }
+        //update report and status
+        update_cal_status();
+        update_cal_report();
+    }
+
+    // collect the minimum number of samples
+    if (!_fitting()) {
+        return;
+    }
+
+    if (_status == Status::RUNNING_STEP_ONE) {
+        if (_fit_step >= 10) {
+            if (is_equal(_fitness, _initial_fitness) || isnan(_fitness)) {  // if true, means that fitness is diverging instead of converging
+                set_status(Status::FAILED);
+            } else {
+                set_status(Status::RUNNING_STEP_TWO);
+            }
+        } else {
+            if (_fit_step == 0) {
+                calc_initial_offset();
+            }
+            run_sphere_fit();
+            _fit_step++;
+        }
+    } else if (_status == Status::RUNNING_STEP_TWO) {
+        if (_fit_step >= 35) {
+            if (fit_acceptable() && fix_radius() && calculate_orientation()) {
+                set_status(Status::SUCCESS);
+            } else {
+                set_status(Status::FAILED);
+            }
+        } else if (_fit_step < 15) {
+            run_sphere_fit();
+            _fit_step++;
+        } else {
+            run_ellipsoid_fit();
+            _fit_step++;
+        }
+    }
+}
+
+void CompassCalibrator::pull_sample()
+{
+    CompassSample mag_sample;
+    {
+        WITH_SEMAPHORE(sample_sem);
+        if (!_new_sample) {
+            return;
+        }
+        if (_status == Status::WAITING_TO_START) {
+            set_status(Status::RUNNING_STEP_ONE);
+        }
+        _new_sample = false;
+        mag_sample = _last_sample;
+    }
+    if (_running() && _samples_collected < COMPASS_CAL_NUM_SAMPLES && accept_sample(mag_sample.get())) {
+        update_completion_mask(mag_sample.get());
+        _sample_buffer[_samples_collected] = mag_sample;
+        _samples_collected++;
+    }
+}
+
+
+void CompassCalibrator::update_cal_settings()
+{
+    _tolerance = cal_settings.tolerance;
+    _check_orientation = cal_settings.check_orientation;
+    _orientation = cal_settings.orientation;
+    _orig_orientation = cal_settings.orig_orientation;
+    _is_external = cal_settings.is_external;
+    _fix_orientation = cal_settings.fix_orientation;
+    _offset_max = cal_settings.offset_max;
+    _attempt = cal_settings.attempt;
+    _retry = cal_settings.retry;
+    _delay_start_sec = cal_settings.delay_start_sec;
+    _start_time_ms = cal_settings.start_time_ms;
+    _compass_idx = cal_settings.compass_idx;
 }
 
 // update completion mask based on latest sample
@@ -162,86 +279,60 @@ void CompassCalibrator::update_completion_mask()
     }
 }
 
-bool CompassCalibrator::check_for_timeout()
+void CompassCalibrator::update_cal_status()
 {
-    uint32_t tnow = AP_HAL::millis();
-    if (running() && tnow - _last_sample_ms > 1000) {
-        _retry = false;
-        set_status(COMPASS_CAL_FAILED);
-        return true;
-    }
-    return false;
+    cal_state.status = _status;
+    cal_state.attempt = _attempt;
+    memcpy(cal_state.completion_mask, _completion_mask, sizeof(completion_mask_t));
+    cal_state.completion_pct = 0.0f;
+    // first sampling step is 1/3rd of the progress bar
+    // never return more than 99% unless _status is Status::SUCCESS
+    switch (_status) {
+        case Status::NOT_STARTED:
+        case Status::WAITING_TO_START:
+            cal_state.completion_pct = 0.0f;
+            break;
+        case Status::RUNNING_STEP_ONE:
+            cal_state.completion_pct = 33.3f * _samples_collected/COMPASS_CAL_NUM_SAMPLES;
+            break;
+        case Status::RUNNING_STEP_TWO:
+            cal_state.completion_pct = 33.3f + 65.7f*((float)(_samples_collected-_samples_thinned)/(COMPASS_CAL_NUM_SAMPLES-_samples_thinned));
+            break;
+        case Status::SUCCESS:
+            cal_state.completion_pct = 100.0f;
+            break;
+        case Status::FAILED:
+        case Status::BAD_ORIENTATION:
+        case Status::BAD_RADIUS:
+            cal_state.completion_pct = 0.0f;
+            break;
+    };
 }
 
-void CompassCalibrator::new_sample(const Vector3f& sample)
+
+void CompassCalibrator::update_cal_report()
 {
-    _last_sample_ms = AP_HAL::millis();
-
-    if (_status == COMPASS_CAL_WAITING_TO_START) {
-        set_status(COMPASS_CAL_RUNNING_STEP_ONE);
-    }
-
-    if (running() && _samples_collected < COMPASS_CAL_NUM_SAMPLES && accept_sample(sample)) {
-        update_completion_mask(sample);
-        _sample_buffer[_samples_collected].set(sample);
-        _sample_buffer[_samples_collected].att.set_from_ahrs();
-        _samples_collected++;
-    }
+    cal_report.status = _status;
+    cal_report.fitness = sqrtf(_fitness);
+    cal_report.ofs = _params.offset;
+    cal_report.diag = _params.diag;
+    cal_report.offdiag = _params.offdiag;
+    cal_report.scale_factor = _params.scale_factor;
+    cal_report.orientation_confidence = _orientation_confidence;
+    cal_report.original_orientation = _orig_orientation;
+    cal_report.orientation = _orientation_solution;
 }
 
-void CompassCalibrator::update(bool &failure)
+// running method for use in thread
+bool CompassCalibrator::_running() const
 {
-    failure = false;
-
-    // collect the minimum number of samples
-    if (!fitting()) {
-        return;
-    }
-
-    if (_status == COMPASS_CAL_RUNNING_STEP_ONE) {
-        if (_fit_step >= 10) {
-            if (is_equal(_fitness, _initial_fitness) || isnan(_fitness)) {  // if true, means that fitness is diverging instead of converging
-                set_status(COMPASS_CAL_FAILED);
-                failure = true;
-            } else {
-                set_status(COMPASS_CAL_RUNNING_STEP_TWO);
-            }
-        } else {
-            if (_fit_step == 0) {
-                calc_initial_offset();
-            }
-            run_sphere_fit();
-            _fit_step++;
-        }
-    } else if (_status == COMPASS_CAL_RUNNING_STEP_TWO) {
-        if (_fit_step >= 35) {
-            if (fit_acceptable() && calculate_orientation()) {
-                set_status(COMPASS_CAL_SUCCESS);
-            } else {
-                set_status(COMPASS_CAL_FAILED);
-                failure = true;
-            }
-        } else if (_fit_step < 15) {
-            run_sphere_fit();
-            _fit_step++;
-        } else {
-            run_ellipsoid_fit();
-            _fit_step++;
-        }
-    }
+    return _status == Status::RUNNING_STEP_ONE || _status == Status::RUNNING_STEP_TWO;
 }
 
-/////////////////////////////////////////////////////////////
-////////////////////// PRIVATE METHODS //////////////////////
-/////////////////////////////////////////////////////////////
-bool CompassCalibrator::running() const
+// fitting method for use in thread
+bool CompassCalibrator::_fitting() const
 {
-    return _status == COMPASS_CAL_RUNNING_STEP_ONE || _status == COMPASS_CAL_RUNNING_STEP_TWO;
-}
-
-bool CompassCalibrator::fitting() const
-{
-    return running() && (_samples_collected == COMPASS_CAL_NUM_SAMPLES);
+    return _running() && (_samples_collected == COMPASS_CAL_NUM_SAMPLES);
 }
 
 // initialize fitness before starting a fit
@@ -266,35 +357,36 @@ void CompassCalibrator::reset_state()
     _params.offset.zero();
     _params.diag = Vector3f(1.0f,1.0f,1.0f);
     _params.offdiag.zero();
+    _params.scale_factor = 0;
 
     memset(_completion_mask, 0, sizeof(_completion_mask));
     initialize_fit();
 }
 
-bool CompassCalibrator::set_status(compass_cal_status_t status)
+bool CompassCalibrator::set_status(CompassCalibrator::Status status)
 {
-    if (status != COMPASS_CAL_NOT_STARTED && _status == status) {
+    if (status != Status::NOT_STARTED && _status == status) {
         return true;
     }
 
     switch (status) {
-        case COMPASS_CAL_NOT_STARTED:
+        case Status::NOT_STARTED:
             reset_state();
-            _status = COMPASS_CAL_NOT_STARTED;
+            _status = Status::NOT_STARTED;
             if (_sample_buffer != nullptr) {
                 free(_sample_buffer);
                 _sample_buffer = nullptr;
             }
             return true;
 
-        case COMPASS_CAL_WAITING_TO_START:
+        case Status::WAITING_TO_START:
             reset_state();
-            _status = COMPASS_CAL_WAITING_TO_START;
-            set_status(COMPASS_CAL_RUNNING_STEP_ONE);
+            _status = Status::WAITING_TO_START;
+            set_status(Status::RUNNING_STEP_ONE);
             return true;
 
-        case COMPASS_CAL_RUNNING_STEP_ONE:
-            if (_status != COMPASS_CAL_WAITING_TO_START) {
+        case Status::RUNNING_STEP_ONE:
+            if (_status != Status::WAITING_TO_START) {
                 return false;
             }
 
@@ -308,22 +400,22 @@ bool CompassCalibrator::set_status(compass_cal_status_t status)
             }
             if (_sample_buffer != nullptr) {
                 initialize_fit();
-                _status = COMPASS_CAL_RUNNING_STEP_ONE;
+                _status = Status::RUNNING_STEP_ONE;
                 return true;
             }
             return false;
 
-        case COMPASS_CAL_RUNNING_STEP_TWO:
-            if (_status != COMPASS_CAL_RUNNING_STEP_ONE) {
+        case Status::RUNNING_STEP_TWO:
+            if (_status != Status::RUNNING_STEP_ONE) {
                 return false;
             }
             thin_samples();
             initialize_fit();
-            _status = COMPASS_CAL_RUNNING_STEP_TWO;
+            _status = Status::RUNNING_STEP_TWO;
             return true;
 
-        case COMPASS_CAL_SUCCESS:
-            if (_status != COMPASS_CAL_RUNNING_STEP_TWO) {
+        case Status::SUCCESS:
+            if (_status != Status::RUNNING_STEP_TWO) {
                 return false;
             }
 
@@ -332,22 +424,24 @@ bool CompassCalibrator::set_status(compass_cal_status_t status)
                 _sample_buffer = nullptr;
             }
 
-            _status = COMPASS_CAL_SUCCESS;
+            _status = Status::SUCCESS;
             return true;
 
-        case COMPASS_CAL_FAILED:
-            if (_status == COMPASS_CAL_BAD_ORIENTATION) {
+        case Status::FAILED:
+            if (_status == Status::BAD_ORIENTATION ||
+                _status == Status::BAD_RADIUS) {
                 // don't overwrite bad orientation status
                 return false;
             }
             FALLTHROUGH;
-            
-        case COMPASS_CAL_BAD_ORIENTATION:
-            if (_status == COMPASS_CAL_NOT_STARTED) {
+
+        case Status::BAD_ORIENTATION:
+        case Status::BAD_RADIUS:
+            if (_status == Status::NOT_STARTED) {
                 return false;
             }
 
-            if (_retry && set_status(COMPASS_CAL_WAITING_TO_START)) {
+            if (_retry && set_status(Status::WAITING_TO_START)) {
                 _attempt++;
                 return true;
             }
@@ -368,7 +462,7 @@ bool CompassCalibrator::set_status(compass_cal_status_t status)
 bool CompassCalibrator::fit_acceptable()
 {
     if (!isnan(_fitness) &&
-        _params.radius > 150 && _params.radius < 950 && //Earth's magnetic field strength range: 250-850mG
+        _params.radius > FIELD_RADIUS_MIN && _params.radius < FIELD_RADIUS_MAX &&
         fabsf(_params.offset.x) < _offset_max &&
         fabsf(_params.offset.y) < _offset_max &&
         fabsf(_params.offset.z) < _offset_max &&
@@ -815,9 +909,11 @@ bool CompassCalibrator::calculate_orientation(void)
     // this function is very slow
     EXPECT_DELAY_MS(1000);
 
-    float variance[ROTATION_MAX] {};
+    float variance[ROTATION_MAX_AUTO_ROTATION+1] {};
 
-    for (enum Rotation r = ROTATION_NONE; r<ROTATION_MAX; r = (enum Rotation)(r+1)) {
+    _orientation_solution = _orientation;
+    
+    for (enum Rotation r = ROTATION_NONE; r <= ROTATION_MAX_AUTO_ROTATION; r = (enum Rotation)(r+1)) {
         // calculate the average implied earth field across all samples
         Vector3f total_ef {};
         for (uint32_t i=0; i<_samples_collected; i++) {
@@ -838,7 +934,7 @@ bool CompassCalibrator::calculate_orientation(void)
     // find the rotation with the lowest variance
     enum Rotation besti = ROTATION_NONE;
     float bestv = variance[0];
-    for (enum Rotation r = ROTATION_NONE; r<ROTATION_MAX; r = (enum Rotation)(r+1)) {
+    for (enum Rotation r = ROTATION_NONE; r <= ROTATION_MAX_AUTO_ROTATION; r = (enum Rotation)(r+1)) {
         if (variance[r] < bestv) {
             bestv = variance[r];
             besti = r;
@@ -851,7 +947,7 @@ bool CompassCalibrator::calculate_orientation(void)
 
     float second_best = besti==ROTATION_NONE?variance[1]:variance[0];
     enum Rotation besti2 = ROTATION_NONE;
-    for (enum Rotation r = ROTATION_NONE; r<ROTATION_MAX; r = (enum Rotation)(r+1)) {
+    for (enum Rotation r = ROTATION_NONE; r <= ROTATION_MAX_AUTO_ROTATION; r = (enum Rotation)(r+1)) {
         if (!rotation_equal(besti, r)) {
             if (variance[r] < second_best) {
                 second_best = variance[r];
@@ -870,19 +966,20 @@ bool CompassCalibrator::calculate_orientation(void)
         pass = _orientation_confidence > variance_threshold;
     }
     if (!pass) {
-        gcs().send_text(MAV_SEVERITY_CRITICAL, "Mag(%u) bad orientation: %u/%u %.1f", _compass_idx,
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Mag(%u) bad orientation: %u/%u %.1f", _compass_idx,
                         besti, besti2, (double)_orientation_confidence);
+        (void)besti2;
     } else if (besti == _orientation) {
         // no orientation change
-        gcs().send_text(MAV_SEVERITY_INFO, "Mag(%u) good orientation: %u %.1f", _compass_idx, besti, (double)_orientation_confidence);
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Mag(%u) good orientation: %u %.1f", _compass_idx, besti, (double)_orientation_confidence);
     } else if (!_is_external || !_fix_orientation) {
-        gcs().send_text(MAV_SEVERITY_CRITICAL, "Mag(%u) internal bad orientation: %u %.1f", _compass_idx, besti, (double)_orientation_confidence);
+        GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "Mag(%u) internal bad orientation: %u %.1f", _compass_idx, besti, (double)_orientation_confidence);
     } else {
-        gcs().send_text(MAV_SEVERITY_INFO, "Mag(%u) new orientation: %u was %u %.1f", _compass_idx, besti, _orientation, (double)_orientation_confidence);
+        GCS_SEND_TEXT(MAV_SEVERITY_INFO, "Mag(%u) new orientation: %u was %u %.1f", _compass_idx, besti, _orientation, (double)_orientation_confidence);
     }
 
     if (!pass) {
-        set_status(COMPASS_CAL_BAD_ORIENTATION);
+        set_status(Status::BAD_ORIENTATION);
         return false;
     }
 
@@ -895,7 +992,8 @@ bool CompassCalibrator::calculate_orientation(void)
         // we won't change the orientation, but we set _orientation
         // for reporting purposes
         _orientation = besti;
-        set_status(COMPASS_CAL_BAD_ORIENTATION);
+        _orientation_solution = besti;
+        set_status(Status::BAD_ORIENTATION);
         return false;
     }
 
@@ -914,6 +1012,7 @@ bool CompassCalibrator::calculate_orientation(void)
     }
 
     _orientation = besti;
+    _orientation_solution = besti;
 
     // re-run the fit to get the diagonals and off-diagonals for the
     // new orientation
@@ -922,4 +1021,41 @@ bool CompassCalibrator::calculate_orientation(void)
     run_ellipsoid_fit();
 
     return fit_acceptable();
+}
+
+/*
+  fix radius of the fit to compensate for sensor scale factor errors
+  return false if radius is outside acceptable range
+ */
+bool CompassCalibrator::fix_radius(void)
+{
+    if (AP::gps().status() < AP_GPS::GPS_OK_FIX_2D) {
+        // we don't have a position, leave scale factor as 0. This
+        // will disable use of WMM in the EKF. Users can manually set
+        // scale factor after calibration if it is known
+        _params.scale_factor = 0;
+        return true;
+    }
+    const struct Location &loc = AP::gps().location();
+    float intensity;
+    float declination;
+    float inclination;
+    AP_Declination::get_mag_field_ef(loc.lat * 1e-7f, loc.lng * 1e-7f, intensity, declination, inclination);
+
+    float expected_radius = intensity * 1000; // mGauss
+    float correction = expected_radius / _params.radius;
+
+    if (correction > COMPASS_MAX_SCALE_FACTOR || correction < COMPASS_MIN_SCALE_FACTOR) {
+        // don't allow more than 30% scale factor correction
+        GCS_SEND_TEXT(MAV_SEVERITY_ERROR, "Mag(%u) bad radius %.0f expected %.0f",
+                        _compass_idx,
+                        _params.radius,
+                        expected_radius);
+        set_status(Status::BAD_RADIUS);
+        return false;
+    }
+
+    _params.scale_factor = correction;
+
+    return true;
 }

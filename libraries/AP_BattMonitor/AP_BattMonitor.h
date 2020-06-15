@@ -19,11 +19,20 @@
 #define AP_BATT_MONITOR_RES_EST_TC_1        0.5f
 #define AP_BATT_MONITOR_RES_EST_TC_2        0.1f
 
+#ifndef HAL_BATTMON_SMBUS_ENABLE
+#define HAL_BATTMON_SMBUS_ENABLE 1
+#endif
+
+#ifndef HAL_BATTMON_FUEL_ENABLE
+#define HAL_BATTMON_FUEL_ENABLE 1
+#endif
+
 // declare backend class
 class AP_BattMonitor_Backend;
 class AP_BattMonitor_Analog;
 class AP_BattMonitor_SMBus;
 class AP_BattMonitor_SMBus_Solo;
+class AP_BattMonitor_SMBus_Generic;
 class AP_BattMonitor_SMBus_Maxell;
 class AP_BattMonitor_UAVCAN;
 
@@ -33,6 +42,7 @@ class AP_BattMonitor
     friend class AP_BattMonitor_Analog;
     friend class AP_BattMonitor_SMBus;
     friend class AP_BattMonitor_SMBus_Solo;
+    friend class AP_BattMonitor_SMBus_Generic;
     friend class AP_BattMonitor_SMBus_Maxell;
     friend class AP_BattMonitor_UAVCAN;
     friend class AP_BattMonitor_Sum;
@@ -144,8 +154,11 @@ public:
     const cells & get_cell_voltages(const uint8_t instance) const;
 
     // temperature
-    bool get_temperature(float &temperature) const { return get_temperature(temperature, AP_BATT_PRIMARY_INSTANCE); };
+    bool get_temperature(float &temperature) const { return get_temperature(temperature, AP_BATT_PRIMARY_INSTANCE); }
     bool get_temperature(float &temperature, const uint8_t instance) const;
+
+    // cycle count
+    bool get_cycle_count(uint8_t instance, uint16_t &cycles) const;
 
     // get battery resistance estimate in ohms
     float get_resistance() const { return get_resistance(AP_BATT_PRIMARY_INSTANCE); }

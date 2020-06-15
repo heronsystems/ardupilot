@@ -173,10 +173,12 @@ void AP_GPS_UAVCAN::handle_fix_msg(const FixCb &cb)
 
         if (cb.msg->gnss_time_standard == uavcan::equipment::gnss::Fix::GNSS_TIME_STANDARD_UTC) {
             uint64_t epoch_ms = uavcan::UtcTime(cb.msg->gnss_timestamp).toUSec();
-            epoch_ms /= 1000;
-            uint64_t gps_ms = epoch_ms - UNIX_OFFSET_MSEC;
-            interim_state.time_week = (uint16_t)(gps_ms / AP_MSEC_PER_WEEK);
-            interim_state.time_week_ms = (uint32_t)(gps_ms - (interim_state.time_week) * AP_MSEC_PER_WEEK);
+            if (epoch_ms != 0) {
+                epoch_ms /= 1000;
+                uint64_t gps_ms = epoch_ms - UNIX_OFFSET_MSEC;
+                interim_state.time_week = (uint16_t)(gps_ms / AP_MSEC_PER_WEEK);
+                interim_state.time_week_ms = (uint32_t)(gps_ms - (interim_state.time_week) * AP_MSEC_PER_WEEK);
+            }
         }
     }
 
@@ -240,6 +242,12 @@ void AP_GPS_UAVCAN::handle_fix_msg(const FixCb &cb)
         interim_state.num_sats = 0;
     }
 
+    if (!seen_aux) {
+        // if we haven't seen an Aux message then populate vdop and
+        // hdop from pdop. Some GPS modules don't provide the Aux message
+        interim_state.hdop = interim_state.vdop = cb.msg->pdop * 100.0;
+    }
+
     interim_state.last_gps_time_ms = AP_HAL::millis();
 
     _new_data = true;
@@ -277,10 +285,12 @@ void AP_GPS_UAVCAN::handle_fix2_msg(const Fix2Cb &cb)
 
         if (cb.msg->gnss_time_standard == uavcan::equipment::gnss::Fix2::GNSS_TIME_STANDARD_UTC) {
             uint64_t epoch_ms = uavcan::UtcTime(cb.msg->gnss_timestamp).toUSec();
-            epoch_ms /= 1000;
-            uint64_t gps_ms = epoch_ms - UNIX_OFFSET_MSEC;
-            interim_state.time_week = (uint16_t)(gps_ms / AP_MSEC_PER_WEEK);
-            interim_state.time_week_ms = (uint32_t)(gps_ms - (interim_state.time_week) * AP_MSEC_PER_WEEK);
+            if (epoch_ms != 0) {
+                epoch_ms /= 1000;
+                uint64_t gps_ms = epoch_ms - UNIX_OFFSET_MSEC;
+                interim_state.time_week = (uint16_t)(gps_ms / AP_MSEC_PER_WEEK);
+                interim_state.time_week_ms = (uint32_t)(gps_ms - (interim_state.time_week) * AP_MSEC_PER_WEEK);
+            }
         }
 
         if (interim_state.status == AP_GPS::GPS_Status::GPS_OK_FIX_3D) {
@@ -345,6 +355,12 @@ void AP_GPS_UAVCAN::handle_fix2_msg(const Fix2Cb &cb)
         interim_state.num_sats = 0;
     }
 
+    if (!seen_aux) {
+        // if we haven't seen an Aux message then populate vdop and
+        // hdop from pdop. Some GPS modules don't provide the Aux message
+        interim_state.hdop = interim_state.vdop = cb.msg->pdop * 100.0;
+    }
+    
     interim_state.last_gps_time_ms = AP_HAL::millis();
 
     _new_data = true;
@@ -364,10 +380,12 @@ void AP_GPS_UAVCAN::handle_aux_msg(const AuxCb &cb)
     WITH_SEMAPHORE(sem);
 
     if (!uavcan::isNaN(cb.msg->hdop)) {
+        seen_aux = true;
         interim_state.hdop = cb.msg->hdop * 100.0;
     }
 
     if (!uavcan::isNaN(cb.msg->vdop)) {
+        seen_aux = true;
         interim_state.vdop = cb.msg->vdop * 100.0;
     }
 }
