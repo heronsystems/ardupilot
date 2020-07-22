@@ -37,7 +37,7 @@ const AP_Param::GroupInfo AC_Fence::var_info[] = {
     // @User: Standard
     AP_GROUPINFO("ACTION",      2,  AC_Fence,   _action,        AC_FENCE_ACTION_RTL_AND_LAND),
 
-    // @Param: ALT_MAX
+    // @Param{Copter, Sub}: ALT_MAX
     // @DisplayName: Fence Maximum Altitude
     // @Description: Maximum altitude allowed before geofence triggers
     // @Units: m
@@ -169,7 +169,7 @@ bool AC_Fence::pre_arm_check(const char* &fail_msg) const
         (_enabled_fences & AC_FENCE_TYPE_POLYGON)) {
         Vector2f position;
         if (!AP::ahrs().get_relative_position_NE_home(position)) {
-            fail_msg = "fence requires position";
+            fail_msg = "Fence requires position";
             return false;
         }
     }
@@ -322,6 +322,9 @@ uint8_t AC_Fence::check()
     if (!_enabled || !_enabled_fences) {
         return 0;
     }
+
+    // clear any breach from a non-enabled fence
+    clear_breach(~_enabled_fences);
 
     // check if pilot is attempting to recover manually
     if (_manual_recovery_start_ms != 0) {

@@ -1006,7 +1006,6 @@ void Compass::_probe_external_i2c_compasses(void)
         }
     }
 
-#if !HAL_MINIMIZE_FEATURES
 #ifndef HAL_BUILD_AP_PERIPH
     // AK09916 on ICM20948
     FOREACH_I2C_EXTERNAL(i) {
@@ -1096,8 +1095,6 @@ void Compass::_probe_external_i2c_compasses(void)
         ADD_BACKEND(DRIVER_RM3100, AP_Compass_RM3100::probe(GET_I2C_DEVICE(i, HAL_COMPASS_RM3100_I2C_ADDR),
                     all_external, ROTATION_NONE));
     }
-
-#endif // HAL_MINIMIZE_FEATURES
 }
 
 /*
@@ -1677,7 +1674,7 @@ const Vector3f& Compass::getHIL(uint8_t instance) const
 void Compass::_setup_earth_field(void)
 {
     // assume a earth field strength of 400
-    _hil.Bearth(400, 0, 0);
+    _hil.Bearth = {400, 0, 0};
 
     // rotate _Bearth for inclination and declination. -66 degrees
     // is the inclination in Canberra, Australia

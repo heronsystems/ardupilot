@@ -6,6 +6,7 @@
 #include <AP_Vehicle/AP_Vehicle.h>
 #include <GCS_MAVLink/GCS.h>
 #include <AP_GPS/AP_GPS.h>
+#include <AP_VisualOdom/AP_VisualOdom.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -51,8 +52,8 @@ bool NavEKF3_core::setup_core(uint8_t _imu_index, uint8_t _core_index)
      */
 
     // Calculate the expected EKF time step
-    if (AP::ins().get_sample_rate() > 0) {
-        dtEkfAvg = 1.0f / AP::ins().get_sample_rate();
+    if (AP::ins().get_loop_rate_hz() > 0) {
+        dtEkfAvg = 1.0f / AP::ins().get_loop_rate_hz();
         dtEkfAvg = MAX(dtEkfAvg,EKF_TARGET_DT);
     } else {
         return false;
@@ -92,6 +93,14 @@ bool NavEKF3_core::setup_core(uint8_t _imu_index, uint8_t _core_index)
     if (_ahrs->airspeed_sensor_enabled()) {
         maxTimeDelay_ms = MAX(maxTimeDelay_ms , frontend->tasDelay_ms);
     }
+
+#if HAL_VISUALODOM_ENABLED
+    // include delay from visual odometry if enabled
+    AP_VisualOdom *visual_odom = AP::visualodom();
+    if ((visual_odom != nullptr) && visual_odom->enabled()) {
+        maxTimeDelay_ms = MAX(maxTimeDelay_ms, MIN(visual_odom->get_delay_ms(), 250));
+    }
+#endif
 
     // calculate the IMU buffer length required to accommodate the maximum delay with some allowance for jitter
     imu_buffer_length = (maxTimeDelay_ms / (uint16_t)(EKF_TARGET_DT_MS)) + 1;
@@ -225,7 +234,6 @@ void NavEKF3_core::InitialiseVariables()
     lastVelReset_ms = 0;
     lastPosResetD_ms = 0;
     lastRngMeasTime_ms = 0;
-    terrainHgtStableSet_ms = 0;
 
     // initialise other variables
     gpsNoiseScaler = 1.0f;
@@ -270,8 +278,9 @@ void NavEKF3_core::InitialiseVariables()
     gndOffsetValid =  false;
     validOrigin = false;
     takeoffExpectedSet_ms = 0;
-    expectGndEffectTakeoff = false;
+    expectTakeoff = false;
     touchdownExpectedSet_ms = 0;
+    expectGndEffectTakeoff = false;
     expectGndEffectTouchdown = false;
     gpsSpdAccuracy = 0.0f;
     gpsPosAccuracy = 0.0f;
@@ -439,6 +448,7 @@ void NavEKF3_core::InitialiseVariables()
     EKFGSF_yaw_reset_request_ms = 0;
     EKFGSF_yaw_reset_count = 0;
     EKFGSF_run_filterbank = false;
+    EKFGSF_yaw_valid_count = 0;
 
     effectiveMagCal = effective_magCal();
 }

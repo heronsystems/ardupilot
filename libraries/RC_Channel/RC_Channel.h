@@ -181,17 +181,27 @@ public:
         DISARM =              81, // disarm vehicle
         Q_ASSIST =            82, // disable, enable and force Q assist
         ZIGZAG_Auto =         83, // zigzag auto switch
+        AIRMODE =             84, // enable / disable airmode for copter
+        GENERATOR   =         85, // generator control
+        TER_DISABLE =         86, // disable terrain following in CRUISE/FBWB modes
+        CROW_SELECT =         87, // select CROW mode for diff spoilers;high disables,mid forces progressive
+        SOARING =             88, // three-position switch to set soaring mode
+
+        // entries from 100 onwards are expected to be developer
+        // options used for testing
         KILL_IMU1 =          100, // disable first IMU (for IMU failure testing)
         KILL_IMU2 =          101, // disable second IMU (for IMU failure testing)
         CAM_MODE_TOGGLE =    102, // Momentary switch to cycle camera modes
         EKF_LANE_SWITCH =    103, // trigger lane switch attempt
         EKF_YAW_RESET =      104, // trigger yaw reset attempt
+        GPS_DISABLE_YAW =    105, // disable GPS yaw for testing
         // if you add something here, make sure to update the documentation of the parameter in RC_Channel.cpp!
         // also, if you add an option >255, you will need to fix duplicate_options_exist
 
-        // inputs eventually used to replace RCMAP
+        // inputs from 200 will eventually used to replace RCMAP
         MAINSAIL =           207, // mainsail input
         FLAP =               208, // flap input
+        FWD_THR =            209, // VTOL manual forward throttle
     };
     typedef enum AUX_FUNC aux_func_t;
 
@@ -224,6 +234,7 @@ protected:
     void do_aux_function_rc_override_enable(const AuxSwitchPos ch_flag);
     void do_aux_function_relay(uint8_t relay, bool val);
     void do_aux_function_sprayer(const AuxSwitchPos ch_flag);
+    void do_aux_function_generator(const AuxSwitchPos ch_flag);
 
     typedef int8_t modeswitch_pos_t;
     virtual void mode_switch_changed(modeswitch_pos_t new_pos) {
@@ -274,6 +285,17 @@ private:
     void reset_mode_switch();
     void read_mode_switch();
     bool debounce_completed(int8_t position);
+
+#if !HAL_MINIMIZE_FEATURES
+    // Structure to lookup switch change announcements
+    struct LookupTable{
+       AUX_FUNC option;
+       const char *announcement;
+    };
+
+    static const LookupTable lookuptable[];
+    const char *string_for_aux_function(AUX_FUNC function) const;
+#endif
 };
 
 
@@ -386,7 +408,10 @@ public:
     float override_timeout_ms() const {
         return _override_timeout.get() * 1e3f;
     }
-    
+
+    // returns true if we have had a direct detach RC reciever, does not include overrides
+    bool has_had_rc_receiver() const { return _has_had_rc_receiver; }
+
     /*
       get the RC input PWM value given a channel number.  Note that
       channel numbers start at 1, as this API is designed for use in
@@ -420,6 +445,7 @@ private:
 
     uint32_t last_update_ms;
     bool has_new_overrides;
+    bool _has_had_rc_receiver; // true if we have had a direct detach RC reciever, does not include overrides
 
     AP_Float _override_timeout;
     AP_Int32  _options;
