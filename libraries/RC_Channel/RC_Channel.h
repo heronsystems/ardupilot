@@ -199,9 +199,23 @@ public:
         // also, if you add an option >255, you will need to fix duplicate_options_exist
 
         // inputs from 200 will eventually used to replace RCMAP
+        ROLL =               201, // roll input
+        PITCH =              202, // pitch input
+        WALKING_HEIGHT =     203, // walking robot height input
         MAINSAIL =           207, // mainsail input
         FLAP =               208, // flap input
         FWD_THR =            209, // VTOL manual forward throttle
+        AIRBRAKE =           210, // manual airbrake control
+
+        // inputs for the use of onboard lua scripting
+        SCRIPTING_1 =        300,
+        SCRIPTING_2 =        301,
+        SCRIPTING_3 =        302,
+        SCRIPTING_4 =        303,
+        SCRIPTING_5 =        304,
+        SCRIPTING_6 =        305,
+        SCRIPTING_7 =        306,
+        SCRIPTING_8 =        307,
     };
     typedef enum AUX_FUNC aux_func_t;
 
@@ -409,6 +423,9 @@ public:
         return _override_timeout.get() * 1e3f;
     }
 
+    // get mask of enabled protocols
+    uint32_t enabled_protocols() const;
+
     // returns true if we have had a direct detach RC reciever, does not include overrides
     bool has_had_rc_receiver() const { return _has_had_rc_receiver; }
 
@@ -449,6 +466,7 @@ private:
 
     AP_Float _override_timeout;
     AP_Int32  _options;
+    AP_Int32  _protocols;
 
     // flight_mode_channel_number must be overridden in vehicle specific code
     virtual int8_t flight_mode_channel_number() const = 0;

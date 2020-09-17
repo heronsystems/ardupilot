@@ -29,6 +29,7 @@
 #include "SIM_Parachute.h"
 #include "SIM_Precland.h"
 #include "SIM_RichenPower.h"
+#include "SIM_I2C.h"
 #include "SIM_Buzzer.h"
 #include <Filter/Filter.h>
 
@@ -126,7 +127,9 @@ public:
     const Location &get_location() const { return location; }
 
     const Vector3f &get_position() const { return position; }
-    const float &get_range() const { return range; }
+
+    // distance the rangefinder is perceiving
+    float rangefinder_range() const;
 
     void get_attitude(Quaternion &attitude) const {
         attitude.from_rotation_matrix(dcm);
@@ -142,6 +145,7 @@ public:
     void set_gripper_servo(Gripper_Servo *_gripper) { gripper = _gripper; }
     void set_gripper_epm(Gripper_EPM *_gripper_epm) { gripper_epm = _gripper_epm; }
     void set_precland(SIM_Precland *_precland);
+    void set_i2c(class I2C *_i2c) { i2c = _i2c; }
 
 protected:
     SITL *sitl;
@@ -169,15 +173,24 @@ protected:
     uint8_t num_motors = 1;
     float rpm[12];
     uint8_t rcin_chan_count = 0;
-    float rcin[8];
-    float range = -1.0f;                 // rangefinder detection in m
+    float rcin[12];
+    float range = -1.0f;                 // externally supplied rangefinder value, assumed to have been corrected for vehicle attitude
 
     struct {
         // data from simulated laser scanner, if available
         struct vector3f_array points;
         struct float_array ranges;
     } scanner;
-    
+
+    // Rangefinder
+    float rangefinder_m[RANGEFINDER_MAX_INSTANCES];
+
+    // Windvane apparent wind
+    struct {
+        float speed;
+        float direction;
+    } wind_vane_apparent;
+
     // Wind Turbulence simulated Data
     float turbulence_azimuth = 0.0f;
     float turbulence_horizontal_speed = 0.0f;  // m/s
@@ -300,6 +313,7 @@ private:
     Parachute *parachute;
     RichenPower *richenpower;
     SIM_Precland *precland;
+    class I2C *i2c;
 };
 
 } // namespace SITL

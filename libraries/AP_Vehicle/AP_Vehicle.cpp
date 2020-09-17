@@ -2,6 +2,7 @@
 
 #include <AP_BLHeli/AP_BLHeli.h>
 #include <AP_Common/AP_FWVersion.h>
+#include <AP_Arming/AP_Arming.h>
 
 #define SCHED_TASK(func, rate_hz, max_time_micros) SCHED_TASK_CLASS(AP_Vehicle, &vehicle, func, rate_hz, max_time_micros)
 
@@ -31,11 +32,17 @@ const AP_Param::GroupInfo AP_Vehicle::var_info[] = {
     // @Path: ../AP_RCTelemetry/AP_VideoTX.cpp
     AP_SUBGROUPINFO(vtx, "VTX_",  4, AP_Vehicle, AP_VideoTX),
 
+#if HAL_MSP_ENABLED
+    // @Group: MSP
+    // @Path: ../AP_MSP/AP_MSP.cpp
+    AP_SUBGROUPINFO(msp, "MSP",  5, AP_Vehicle, AP_MSP),
+#endif
+
     AP_GROUPEND
 };
 
 // reference to the vehicle. using AP::vehicle() here does not work on clang
-#if APM_BUILD_TYPE(APM_BUILD_Replay) || APM_BUILD_TYPE(APM_BUILD_UNKNOWN)
+#if APM_BUILD_TYPE(APM_BUILD_UNKNOWN)
 AP_Vehicle& vehicle = *AP_Vehicle::get_singleton();
 #else
 extern AP_Vehicle& vehicle;
@@ -88,6 +95,11 @@ void AP_Vehicle::setup()
     // Register scheduler_delay_cb, which will run anytime you have
     // more than 5ms remaining in your call to hal.scheduler->delay
     hal.scheduler->register_delay_callback(scheduler_delay_callback, 5);
+
+#if HAL_MSP_ENABLED
+    // call MSP init before init_ardupilot to allow for MSP sensors
+    msp.init();
+#endif
 
     // init_ardupilot is where the vehicle does most of its initialisation.
     init_ardupilot();
@@ -161,6 +173,11 @@ void AP_Vehicle::get_common_scheduler_tasks(const AP_Scheduler::Task*& tasks, ui
  */
 void AP_Vehicle::scheduler_delay_callback()
 {
+#if APM_BUILD_TYPE(APM_BUILD_Replay)
+    // compass.init() delays, so we end up here.
+    return;
+#endif
+
     static uint32_t last_1hz, last_50hz, last_5s;
 
     AP_Logger &logger = AP::logger();
@@ -211,6 +228,14 @@ void AP_Vehicle::send_watchdog_reset_statustext()
                     (unsigned)pd.internal_error_count,
                     pd.thread_name4
         );
+}
+
+bool AP_Vehicle::is_crashed() const
+{
+    if (AP::arming().is_armed()) {
+        return false;
+    }
+    return AP::arming().last_disarm_method() == AP_Arming::Method::CRASH;
 }
 
 // @LoggerMessage: FTN

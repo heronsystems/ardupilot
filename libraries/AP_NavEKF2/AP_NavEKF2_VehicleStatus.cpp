@@ -1,13 +1,10 @@
 #include <AP_HAL/AP_HAL.h>
 
-#include "AP_NavEKF2.h"
 #include "AP_NavEKF2_core.h"
 #include <AP_AHRS/AP_AHRS.h>
 #include <AP_Vehicle/AP_Vehicle.h>
 #include <GCS_MAVLink/GCS.h>
 #include <AP_GPS/AP_GPS.h>
-
-#include <stdio.h>
 
 extern const AP_HAL::HAL& hal;
 
@@ -400,7 +397,7 @@ void NavEKF2_core::detectFlight()
     if (!prevOnGround && onGround) {
         // landed so disable filter bank
         EKFGSF_run_filterbank = false;
-    } else if (!prevInFlight && inFlight) {
+    } else if (yawEstimator != nullptr && !prevInFlight && inFlight) {
         // started flying so reset counters and enable filter bank
         EKFGSF_yaw_reset_ms = 0;
         EKFGSF_yaw_reset_request_ms = 0;

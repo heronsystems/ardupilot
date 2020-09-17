@@ -26,6 +26,9 @@ import binascii
 from pymavlink import mavextra
 from pysim import vehicleinfo
 
+import time
+import datetime
+
 # List of open terminal windows for macosx
 windowID = []
 
@@ -295,6 +298,9 @@ def do_build_waf(opts, frame_options):
         cmd_configure.append("--enable-sfml")
         cmd_configure.append("--sitl-osd")
 
+    if opts.OSDMSP:
+        cmd_configure.append("--osd")
+        
     if opts.rgbled:
         cmd_configure.append("--enable-sfml")
         cmd_configure.append("--sitl-rgbled")
@@ -549,13 +555,19 @@ def start_antenna_tracker(opts):
     oldpwd = os.getcwd()
     os.chdir(vehicledir)
     tracker_uarta = "tcp:127.0.0.1:" + str(5760 + 10 * tracker_instance)
-    exe = os.path.join(vehicledir, "AntennaTracker.elf")
+    if cmd_opts.build_system == "waf":
+        binary_basedir = "build/sitl"
+        exe = os.path.join(root_dir,
+                           binary_basedir,
+                           "bin/antennatracker")
+    else:
+        exe = os.path.join(vehicledir, "AntennaTracker.elf")
     run_in_terminal_window("AntennaTracker",
                            ["nice",
                             exe,
                             "-I" + str(tracker_instance),
                             "--model=tracker",
-                            "--home=" + tracker_home])
+                            "--home=" + ",".join([str(x) for x in tracker_home])])
     os.chdir(oldpwd)
 
 
@@ -637,10 +649,25 @@ def start_vehicle(binary, opts, stuff, spawns=None):
             sys.exit(1)
         path += "," + str(opts.add_param_file)
         progress("Adding parameters from (%s)" % (str(opts.add_param_file),))
+    if opts.OSDMSP:
+        path += "," + os.path.join(root_dir, "libraries/AP_MSP/Tools/osdtest.parm")
+        path += "," + os.path.join(autotest_dir, "default_params/msposd.parm")
+        subprocess.Popen([os.path.join(root_dir, "libraries/AP_MSP/Tools/msposd.py")])
+
     if path is not None:
         cmd.extend(["--defaults", path])
     if opts.mcast:
         cmd.extend(["--uartA mcast:"])
+
+    if cmd_opts.start_time is not None:
+        # Parse start_time into a double precision number specifying seconds since 1900.
+        try:
+            start_time_UTC = time.mktime(datetime.datetime.strptime(cmd_opts.start_time, '%Y-%m-%d-%H:%M').timetuple())
+        except:
+            print("Incorrect start time format - require YYYY-MM-DD-HH:MM (given %s)" % cmd_opts.start_time)
+            sys.exit(1)
+
+        cmd.append("--start-time=%d" % start_time_UTC)
 
     old_dir = os.getcwd()
     for i, i_dir in zip(instances, instance_dir):
@@ -990,6 +1017,11 @@ group_sim.add_option("", "--osd",
                      dest='OSD',
                      default=False,
                      help="Enable SITL OSD")
+group_sim.add_option("", "--osdmsp",
+                     action='store_true',
+                     dest='OSDMSP',
+                     default=False,
+                     help="Enable SITL OSD using MSP")
 group_sim.add_option("", "--tonealarm",
                      action='store_true',
                      dest='tonealarm',
@@ -1022,6 +1054,10 @@ group_sim.add_option("--disable-ekf2",
 group_sim.add_option("--disable-ekf3",
                      action='store_true',
                      help="disable EKF3 in build")
+group_sim.add_option("", "--start-time",
+                     default=None,
+                     type='string',
+                     help="specify simulation start time in format YYYY-MM-DD-HH:MM in your local time zone")
 parser.add_option_group(group_sim)
 
 

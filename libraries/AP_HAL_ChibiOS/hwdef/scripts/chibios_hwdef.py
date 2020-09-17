@@ -588,10 +588,10 @@ def make_line(label):
     return line
 
 
-def enable_can(f):
+def enable_can(f, num_ifaces):
     '''setup for a CAN enabled board'''
-    f.write('#define HAL_WITH_UAVCAN 1\n')
-    env_vars['HAL_WITH_UAVCAN'] = '1'
+    f.write('#define HAL_NUM_CAN_IFACES %d\n' % num_ifaces)
+    env_vars['HAL_NUM_CAN_IFACES'] = str(num_ifaces)
 
 
 def has_sdcard_spi():
@@ -646,7 +646,10 @@ def write_mcu_config(f):
     if 'OTG2' in bytype:
         f.write('#define STM32_USB_USE_OTG2                  TRUE\n')
     if have_type_prefix('CAN') and 'AP_PERIPH' not in env_vars:
-        enable_can(f)
+        if 'CAN1' in bytype and 'CAN2' in bytype:
+            enable_can(f, 2)
+        else:
+            enable_can(f, 1)
 
     if get_config('PROCESS_STACK', required=False):
         env_vars['PROCESS_STACK'] = get_config('PROCESS_STACK')
@@ -812,6 +815,8 @@ def write_ldscript(fname):
     else:
         flash_length = get_config('FLASH_BOOTLOADER_LOAD_KB', type=int)
 
+    env_vars['FLASH_TOTAL'] = flash_length * 1024
+
     print("Generating ldscript.ld")
     f = open(fname, 'w')
     ram0_start = ram_map[0][0]
@@ -905,7 +910,9 @@ def write_SPI_table(f):
                mode, lowspeed, highspeed))
         devlist.append('HAL_SPI_DEVICE%u' % devidx)
     f.write('#define HAL_SPI_DEVICE_LIST %s\n\n' % ','.join(devlist))
-
+    for dev in spidev:
+        f.write("#define HAL_WITH_SPI_%s 1\n" % dev[0].upper().replace("-","_"))
+    f.write("\n")
 
 def write_SPI_config(f):
     '''write SPI config defines'''
@@ -1195,7 +1202,7 @@ def write_UART_config(f):
     if OTG2_index is not None:
         f.write('#define HAL_OTG2_UART_INDEX %d\n' % OTG2_index)
         f.write('''
-#if HAL_WITH_UAVCAN
+#if HAL_NUM_CAN_IFACES
 #ifndef HAL_OTG2_PROTOCOL
 #define HAL_OTG2_PROTOCOL SerialProtocol_SLCAN
 #endif

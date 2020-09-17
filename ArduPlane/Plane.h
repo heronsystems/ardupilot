@@ -177,6 +177,8 @@ private:
     RC_Channel *channel_pitch;
     RC_Channel *channel_throttle;
     RC_Channel *channel_rudder;
+    RC_Channel *channel_flap;
+    RC_Channel *channel_airbrake;
 
     AP_Logger logger;
 
@@ -394,13 +396,6 @@ private:
         float locked_roll_err;
         int32_t locked_pitch_cd;
     } acro_state;
-
-    // CRUISE controller state
-    struct CruiseState {
-        bool locked_heading;
-        int32_t locked_heading_cd;
-        uint32_t lock_timer_ms;
-    } cruise_state;
 
     struct {
         uint32_t last_tkoff_arm_time;
@@ -756,7 +751,7 @@ private:
     uint32_t last_home_update_ms;
 
     // Camera/Antenna mount tracking and stabilisation stuff
-#if MOUNT == ENABLED
+#if HAL_MOUNT_ENABLED
     AP_Mount camera_mount;
 #endif
 
@@ -783,7 +778,7 @@ private:
     float rudder_dt;
 
     // soaring mode-change timer
-    uint32_t soaring_mode_timer;
+    uint32_t soaring_mode_timer_ms;
 
     // terrain disable for non AUTO modes, set with an RC Option switch
     bool non_auto_terrain_disable;
@@ -969,7 +964,6 @@ private:
     void update_logging2(void);
     void update_control_mode(void);
     void update_flight_stage();
-    void update_navigation();
     void set_flight_stage(AP_Vehicle::FixedWing::FlightStage fs);
 #if OSD_ENABLED == ENABLED
     void publish_osd_info();
@@ -1042,6 +1036,7 @@ private:
     void set_servos_flaps(void);
     void set_landing_gear(void);
     void dspoiler_update(void);
+    void airbrake_update(void);
     void servo_output_mixers(void);
     void servos_output(void);
     void servos_auto_trim(void);
@@ -1072,6 +1067,8 @@ private:
     // soaring.cpp
 #if SOARING_ENABLED == ENABLED
     void update_soaring();
+    bool soaring_exit_heading_aligned() const;
+    void soaring_restore_mode(const char *reason, ModeReason modereason);
 #endif
 
     // reverse_thrust.cpp
@@ -1114,6 +1111,12 @@ private:
         NORMAL,
         PROGRESSIVE,
         CROW_DISABLED,
+    };
+
+    enum class ThrFailsafe {
+        Disabled    = 0,
+        Enabled     = 1,
+        EnabledNoFS = 2
     };
 
     CrowMode crow_mode = CrowMode::NORMAL;

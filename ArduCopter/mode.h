@@ -86,6 +86,10 @@ public:
     float get_pilot_desired_yaw_rate(int16_t stick_angle);
     float get_pilot_desired_throttle() const;
 
+    // returns climb target_rate reduced to avoid obstacles and
+    // altitude fence
+    float get_avoidance_adjusted_climbrate(float target_rate);
+
     const Vector3f& get_desired_velocity() {
         // note that position control isn't used in every mode, so
         // this may return bogus data:
@@ -245,7 +249,6 @@ public:
     void set_land_complete(bool b);
     GCS_Copter &gcs();
     void set_throttle_takeoff(void);
-    float get_avoidance_adjusted_climbrate(float target_rate);
     uint16_t get_pilot_speed_dn(void);
 
     // end pass-through functions
@@ -791,7 +794,7 @@ public:
 
     bool requires_terrain_failsafe() const override { return true; }
 
-    void set_angle(const Quaternion &q, float climb_rate_cms, bool use_yaw_rate, float yaw_rate_rads);
+    void set_angle(const Quaternion &q, float climb_rate_cms_or_thrust, bool use_yaw_rate, float yaw_rate_rads, bool use_thrust);
     bool set_destination(const Vector3f& destination, bool use_yaw = false, float yaw_cd = 0.0, bool use_yaw_rate = false, float yaw_rate_cds = 0.0, bool yaw_relative = false, bool terrain_alt = false);
     bool set_destination(const Location& dest_loc, bool use_yaw = false, float yaw_cd = 0.0, bool use_yaw_rate = false, float yaw_rate_cds = 0.0, bool yaw_relative = false);
     bool get_wp(Location &loc) override;
@@ -1049,7 +1052,7 @@ public:
     // this should probably not be exposed
     bool state_complete() { return _state_complete; }
 
-    bool is_landing() const override;
+    virtual bool is_landing() const override;
 
     void restart_without_terrain();
 
@@ -1101,9 +1104,9 @@ private:
 
     // return target alt type
     enum class ReturnTargetAltType {
-        RETURN_TARGET_ALTTYPE_RELATIVE = 0,
-        RETURN_TARGET_ALTTYPE_RANGEFINDER = 1,
-        RETURN_TARGET_ALTTYPE_TERRAINDATABASE = 2
+        RELATIVE = 0,
+        RANGEFINDER = 1,
+        TERRAINDATABASE = 2
     };
 
     // Loiter timer - Records how long we have been in loiter
@@ -1129,6 +1132,8 @@ public:
 
     void save_position();
     void exit();
+
+    bool is_landing() const override;
 
 protected:
 
