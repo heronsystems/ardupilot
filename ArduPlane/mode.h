@@ -39,6 +39,7 @@ public:
         QRTL          = 21,
         QAUTOTUNE     = 22,
         QACRO         = 23,
+        AI_RATES      = 24,
     };
 
     // Constructor
@@ -518,6 +519,22 @@ protected:
 
     bool takeoff_started;
     Location start_loc;
+
+    bool _enter() override;
+};
+
+class ModeAI_Rates : public Mode
+{
+public:
+
+    Mode::Number mode_number() const override { return Mode::Number::AI_RATES; }
+    const char *name() const override { return "AI_RATES"; }
+    const char *name4() const override { return "AI_RATES"; }
+
+    // methods that affect movement of the vehicle in this mode
+    void update() override;
+
+protected:
 
     bool _enter() override;
 };

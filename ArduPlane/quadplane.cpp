@@ -1569,6 +1569,7 @@ void QuadPlane::update_transition(void)
 {
     if (plane.control_mode == &plane.mode_manual ||
         plane.control_mode == &plane.mode_acro ||
+        plane.control_mode == &plane.mode_ai_rates ||
         plane.control_mode == &plane.mode_training) {
         // in manual modes quad motors are always off
         if (!tilt.motors_active && !is_tailsitter()) {

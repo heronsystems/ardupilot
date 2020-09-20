@@ -73,6 +73,9 @@ Mode *Plane::mode_from_mode_num(const enum Mode::Number num)
     case Mode::Number::TAKEOFF:
         ret = &mode_takeoff;
         break;
+    case Mode::Number::AI_RATES:
+        ret = &mode_ai_rates;
+        break;
     }
     return ret;
 }

@@ -535,6 +535,7 @@ void Plane::set_servos_controlled(void)
     } else if (control_mode == &mode_stabilize ||
                control_mode == &mode_training ||
                control_mode == &mode_acro ||
+               control_mode == &mode_ai_rates ||
                control_mode == &mode_fbwa ||
                control_mode == &mode_autotune) {
         // a manual throttle mode

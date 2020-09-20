@@ -51,6 +51,7 @@ void GCS_Plane::update_vehicle_sensor_status_flags(void)
 
     case Mode::Number::ACRO:
     case Mode::Number::QACRO:
+    case Mode::Number::AI_RATES:
         rate_controlled = true;
         break;
 

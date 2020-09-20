@@ -157,6 +157,9 @@ public:
     friend class ModeQAcro;
     friend class ModeQAutotune;
     friend class ModeTakeoff;
+    
+    //Ken: This is where we are adding the explicit AI modes we need to support testing.
+    friend class ModeAI_Rates;
 
     Plane(void);
 
@@ -278,6 +281,9 @@ private:
     ModeQAutotune mode_qautotune;
     ModeTakeoff mode_takeoff;
 
+    //Ken: Added Support for AI Modes
+    ModeAI_Rates mode_ai_rates;
+    
     // This is the state of the flight control system
     // There are multiple states defined such as MANUAL, FBW-A, AUTO
     Mode *control_mode = &mode_initializing;
