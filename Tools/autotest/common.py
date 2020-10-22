@@ -1581,9 +1581,9 @@ class AutoTest(ABC):
                                             self.log_name()))
 
     def start_test(self, description):
-        self.progress("#")
+        self.progress("##################################################################################")
         self.progress("########## %s  ##########" % description)
-        self.progress("#")
+        self.progress("##################################################################################")
 
     def try_symlink_tlog(self):
         self.buildlog = self.buildlogs_path(self.log_name() + "-test.tlog")
@@ -1644,7 +1644,7 @@ class AutoTest(ABC):
                 continue
             util.pexpect_drain(p)
 
-    def drain_mav_unparsed(self, mav=None, quiet=False, freshen_sim_time=False):
+    def drain_mav_unparsed(self, mav=None, quiet=True, freshen_sim_time=False):
         if mav is None:
             mav = self.mav
         count = 0
@@ -1665,7 +1665,7 @@ class AutoTest(ABC):
         if freshen_sim_time:
             self.get_sim_time()
 
-    def drain_mav(self, mav=None, unparsed=False, quiet=False):
+    def drain_mav(self, mav=None, unparsed=False, quiet=True):
         if unparsed:
             return self.drain_mav_unparsed(quiet=quiet, mav=mav)
         if mav is None:
@@ -1674,6 +1674,8 @@ class AutoTest(ABC):
         tstart = time.time()
         while mav.recv_match(blocking=False) is not None:
             count += 1
+        if quiet:
+            return
         tdelta = time.time() - tstart
         if tdelta == 0:
             rate = "instantly"
@@ -3973,6 +3975,8 @@ Also, ignores heartbeats not from our target system'''
         tstart = time.time()
         while True:
             if time.time() - tstart > orig_timeout:
+                if not self.sitl_is_running():
+                    self.progress("SITL is not running")
                 raise AutoTestTimeoutException("Did not receive heartbeat")
             m = self.mav.wait_heartbeat(*args, **x)
             if m is None:
@@ -4126,10 +4130,13 @@ Also, ignores heartbeats not from our target system'''
         for desc in self.test_timings.keys():
             if len(desc) > longest:
                 longest = len(desc)
+        tests_total_time = 0
         for desc, test_time in sorted(self.test_timings.items(),
                                       key=self.show_test_timings_key_sorter):
             fmt = "%" + str(longest) + "s: %.2fs"
+            tests_total_time += test_time;
             self.progress(fmt % (desc, test_time))
+        self.progress(fmt % ("**--tests_total_time--**", tests_total_time))
 
     def send_statustext(self, text):
         if sys.version_info.major >= 3 and not isinstance(text, bytes):
@@ -4312,7 +4319,7 @@ Also, ignores heartbeats not from our target system'''
         self.expect_list_add(self.sitl)
 
     def sitl_is_running(self):
-        return self.sitl.is_alive()
+        return self.sitl.isalive()
 
     def init(self):
         """Initilialize autotest feature."""
@@ -4347,6 +4354,12 @@ Also, ignores heartbeats not from our target system'''
         self.wait_heartbeat()
         self.progress("Sim time: %f" % (self.get_sim_time(),))
         self.apply_defaultfile_parameters()
+
+        if not self.sitl_is_running():
+            # we run this just to make sure exceptions are likely to
+            # work OK.
+            raise NotAchievedException("SITL is not running")
+        self.progress("SITL is running")
 
         self.progress("Ready to start testing!")
 
@@ -5514,7 +5527,14 @@ Also, ignores heartbeats not from our target system'''
             # make sure we have finished logging
             self.delay_sim_time(15)
             self.mavproxy.send("log list\n")
-            self.mavproxy.expect("Log ([0-9]+)  numLogs ([0-9]+) lastLog ([0-9]+) size ([0-9]+)", timeout=120)
+            try:
+                self.mavproxy.expect("Log ([0-9]+)  numLogs ([0-9]+) lastLog ([0-9]+) size ([0-9]+)", timeout=120)
+            except pexpect.TIMEOUT as e:
+                if self.sitl_is_running():
+                    self.progress("SITL is running")
+                else:
+                    self.progress("SITL is NOT running")
+                raise NotAchievedException("Received %s" % str(e))
             if int(self.mavproxy.match.group(2)) != 2:
                 raise NotAchievedException("Expected 2 logs")
 
@@ -5902,7 +5922,7 @@ Also, ignores heartbeats not from our target system'''
                 rate = round(self.get_message_rate("CAMERA_FEEDBACK", 20))
                 self.progress("Want=%u got=%u" % (want_rate, rate))
                 if rate != want_rate:
-                    raise NotAchievedException("Did not get expected rate")
+                    raise NotAchievedException("Did not get expected rate (want=%u got=%u" % (want_rate, rate))
 
 
             self.progress("try at the main loop rate")
@@ -5921,9 +5941,6 @@ Also, ignores heartbeats not from our target system'''
 
             self.drain_mav()
 
-            self.progress("Resetting CAMERA_FEEDBACK rate to zero")
-            self.set_message_rate_hz(mavutil.mavlink.MAVLINK_MSG_ID_CAMERA_FEEDBACK, -1)
-
             non_existant_id = 145
             self.send_get_message_interval(non_existant_id)
             m = self.mav.recv_match(type='MESSAGE_INTERVAL', blocking=True)
@@ -5938,6 +5955,9 @@ Also, ignores heartbeats not from our target system'''
                           self.get_exception_stacktrace(e))
             ex = e
 
+        self.progress("Resetting CAMERA_FEEDBACK rate to zero")
+        self.set_message_rate_hz(mavutil.mavlink.MAVLINK_MSG_ID_CAMERA_FEEDBACK, -1)
+
         # tell MAVProxy to start stuffing around with the rates:
         sr = self.sitl_streamrate()
         self.mavproxy.send("set streamrate %u\n" % sr)
@@ -5945,15 +5965,15 @@ Also, ignores heartbeats not from our target system'''
         if ex is not None:
             raise ex
 
-    def test_request_message(self, timeout=60):
-        rate = round(self.get_message_rate("CAMERA_FEEDBACK", 10))
-        if rate != 0:
-            raise PreconditionFailedException("Receving camera feedback")
+    def poll_message(self, message_id, timeout=10):
+        if type(message_id) == str:
+            message_id = eval("mavutil.mavlink.MAVLINK_MSG_ID_%s" % message_id)
         # temporarily use a constant in place of
         # mavutil.mavlink.MAV_CMD_REQUEST_MESSAGE until we have a
         # pymavlink release:
-        self.run_cmd(512,
-                     180,
+        tstart = self.get_sim_time()
+        self.run_cmd(mavutil.mavlink.MAV_CMD_REQUEST_MESSAGE,
+                     message_id,
                      0,
                      0,
                      0,
@@ -5961,7 +5981,22 @@ Also, ignores heartbeats not from our target system'''
                      0,
                      0,
                      timeout=timeout)
-        m = self.mav.recv_match(type='CAMERA_FEEDBACK', blocking=True, timeout=1)
+        while True:
+            if self.get_sim_time_cached() - tstart > timeout:
+                raise NotAchievedException("Did not receive polled message")
+            m = self.mav.recv_match(blocking=True,
+                                    timeout=0.1)
+            if m is None:
+                continue
+            if m.id != message_id:
+                continue
+            return m
+
+    def test_request_message(self, timeout=60):
+        rate = round(self.get_message_rate("CAMERA_FEEDBACK", 10))
+        if rate != 0:
+            raise PreconditionFailedException("Receving camera feedback")
+        m = self.poll_message("CAMERA_FEEDBACK")
         if m is None:
             raise NotAchievedException("Requested CAMERA_FEEDBACK did not arrive")
 
@@ -6716,9 +6751,16 @@ switch value'''
         self.set_parameter("BTN_PIN%u" % btn, pin)
         m = self.mav.recv_match(type='BUTTON_CHANGE', blocking=True, timeout=1)
         self.progress("### m: %s" % str(m))
-        if m is None:
-            raise NotAchievedException("Did not get BUTTON_CHANGE event")
+        if m is not None:
+            # should not get a button-changed event here.  The pins
+            # are simulated pull-down
+            raise NotAchievedException("Received BUTTON_CHANGE event")
         mask = 1<<pin
+        self.set_parameter("SIM_PIN_MASK", mask)
+        m = self.mav.recv_match(type='BUTTON_CHANGE', blocking=True, timeout=1)
+        self.progress("### m: %s" % str(m))
+        if m is None:
+            raise NotAchievedException("Did not receive BUTTON_CHANGE event")
         if not (m.state & mask):
             raise NotAchievedException("Bit not set in mask (got=%u want=%u)" % (m.state, mask))
         m2 = self.mav.recv_match(type='BUTTON_CHANGE', blocking=True, timeout=1)
@@ -6728,28 +6770,19 @@ switch value'''
         # wait for messages to stop coming:
         self.drain_mav_seconds(15)
 
-        # NOTE: SIM_PIN_MASK is *magic*.  You might set it to zero,
-        # but it *will* end up as 1<<btn immediately afterwards.  Thus
-        # not attempting to fetch the value back here:
         new_mask = 0
         self.send_set_parameter("SIM_PIN_MASK", new_mask, verbose=True)
-        tstart = self.get_sim_time_cached()
-        while True:
-            now = self.get_sim_time_cached()
-            if now - tstart > 10:
-                raise AutoTestTimeoutException("No BUTTON_CHANGE received")
-            m3 = self.mav.recv_match(type='BUTTON_CHANGE', blocking=True, timeout=1)
-            self.progress("### m3: %s" % str(m3))
-            if m3 is None:
-                continue
-            if m.last_change_ms == m3.last_change_ms:
-                self.progress("last_change_ms same as first message")
-                continue
-            if m3.state != new_mask:
-                raise NotAchievedException("Unexpected mask (want=%u got=%u)" %
-                                           (new_mask, m3.state))
-            self.progress("correct BUTTON_CHANGE event received")
-            break
+        m3 = self.mav.recv_match(type='BUTTON_CHANGE', blocking=True, timeout=1)
+        self.progress("### m3: %s" % str(m3))
+        if m3 is None:
+            raise NotAchievedException("Did not get 'off' message")
+
+        if m.last_change_ms == m3.last_change_ms:
+            raise NotAchievedException("last_change_ms same as first message")
+        if m3.state != new_mask:
+            raise NotAchievedException("Unexpected mask (want=%u got=%u)" %
+                                       (new_mask, m3.state))
+        self.progress("correct BUTTON_CHANGE event received")
 
     def compare_number_percent(self, num1, num2, percent):
         if num1 == 0 and num2 == 0:
