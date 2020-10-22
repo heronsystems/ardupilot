@@ -16,7 +16,7 @@ void Plane::failsafe_short_on_event(enum failsafe_state fstype, ModeReason reaso
     case Mode::Number::FLY_BY_WIRE_B:
     case Mode::Number::CRUISE:
     case Mode::Number::TRAINING:
-    case Mode::Number::AI_RATES:
+    case Mode::Number::AI_DEFL:
         failsafe.saved_mode_number = control_mode->mode_number();
         failsafe.saved_mode_set = true;
         if(g.fs_action_short == FS_ACTION_SHORT_FBWA) {
@@ -44,6 +44,7 @@ void Plane::failsafe_short_on_event(enum failsafe_state fstype, ModeReason reaso
     case Mode::Number::AVOID_ADSB:
     case Mode::Number::GUIDED:
     case Mode::Number::LOITER:
+    case Mode::Number::THERMAL:
         if(g.fs_action_short != FS_ACTION_SHORT_BESTGUESS) {
             failsafe.saved_mode_number = control_mode->mode_number();
             failsafe.saved_mode_set = true;
@@ -84,7 +85,7 @@ void Plane::failsafe_long_on_event(enum failsafe_state fstype, ModeReason reason
     case Mode::Number::CRUISE:
     case Mode::Number::TRAINING:
     case Mode::Number::CIRCLE:
-    case Mode::Number::AI_RATES:
+    case Mode::Number::AI_DEFL:
         if(g.fs_action_long == FS_ACTION_LONG_PARACHUTE) {
 #if PARACHUTE == ENABLED
             parachute_release();
@@ -112,6 +113,7 @@ void Plane::failsafe_long_on_event(enum failsafe_state fstype, ModeReason reason
     case Mode::Number::AVOID_ADSB:
     case Mode::Number::GUIDED:
     case Mode::Number::LOITER:
+    case Mode::Number::THERMAL:
         if(g.fs_action_long == FS_ACTION_LONG_PARACHUTE) {
 #if PARACHUTE == ENABLED
             parachute_release();

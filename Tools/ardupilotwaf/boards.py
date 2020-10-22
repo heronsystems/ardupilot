@@ -528,7 +528,6 @@ class chibios(Board):
             '-Wfatal-errors',
             '-Werror=uninitialized',
             '-Werror=init-self',
-            '-Wframe-larger-than=1024',
             '-Werror=unused-but-set-variable',
             '-Wno-missing-field-initializers',
             '-Wno-trigraphs',
@@ -628,6 +627,8 @@ class chibios(Board):
         gcc_whitelist = [
             ('4','9','3'),
             ('6','3','1'),
+            ('9','2','1'),
+            ('9','3','1'),
         ]
 
         if cfg.options.Werror or cfg.env.CC_VERSION in gcc_whitelist:
