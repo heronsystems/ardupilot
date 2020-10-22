@@ -10,6 +10,7 @@
 [submodule "modules/mavlink"]
 	path = modules/mavlink
 	url = git://github.com/ArduPilot/mavlink
+	branch = ai_support
 [submodule "gtest"]
 	path = modules/gtest
 	url = git://github.com/ArduPilot/googletest
