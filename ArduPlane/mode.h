@@ -43,6 +43,7 @@ public:
         QAUTOTUNE     = 22,
         QACRO         = 23,
         THERMAL       = 24,
+        AI_DEFL       = 30,
     };
 
     // Constructor
@@ -562,3 +563,21 @@ protected:
 };
 
 #endif
+
+class ModeAI_Deflection : public Mode
+{
+public:
+
+    Mode::Number mode_number() const override { return Mode::Number::AI_DEFL; }
+    const char *name() const override { return "AI_DEFL"; }
+    const char *name4() const override { return "AI_DEFL"; }
+
+    // methods that affect movement of the vehicle in this mode
+    void update() override;
+
+protected:
+
+    bool _enter() override;
+    void _exit() override;
+};
+

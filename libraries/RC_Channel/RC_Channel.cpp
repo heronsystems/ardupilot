@@ -314,6 +314,18 @@ float RC_Channel::norm_input_ignore_trim() const
     return constrain_float(ret, -1.0f, 1.0f);
 }
 
+//return a inverted norm for a channel in the range from radio_min to radio_max
+//ignores trim and deadzone
+int16_t RC_Channel::inverse_norm_ignore_trim(const float &normValue) const
+{
+    if(fabsf(normValue) > 1)
+        return 0.0f;
+
+    const int16_t PWMValue = (((normValue*2.0f) + 0.5f) * (float)(radio_max - radio_min)) + ((float)(radio_min));
+    
+    return constrain_int16(PWMValue, (int16_t)(radio_min), (int16_t)(radio_max));
+}
+
 /*
   get percentage input from 0 to 100. This ignores the trim value.
  */
