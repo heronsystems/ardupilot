@@ -965,7 +965,7 @@ MAV_RESULT GCS_MAVLINK_Plane::handle_command_long_packet(const mavlink_command_l
     case MAV_CMD_AI_DEFLECTION:
     {
         printf("I saw this command type.");
-        return MACE_RESULT_ACCEPTED;
+        return MAV_RESULT_ACCEPTED;
     }
     case MAV_CMD_DO_CHANGE_SPEED: {
         // if we're in failsafe modes (e.g., RTL, LOITER) or in pilot

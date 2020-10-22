@@ -78,6 +78,7 @@ Mode *Plane::mode_from_mode_num(const enum Mode::Number num)
         break;
     case Mode::Number::AI_DEFL:
         ret = &mode_ai_deflection;
+        break;
     case Mode::Number::THERMAL:
 #if HAL_SOARING_ENABLED
         ret = &mode_thermal;
