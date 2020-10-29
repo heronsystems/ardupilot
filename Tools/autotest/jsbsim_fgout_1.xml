@@ -1,0 +1,4 @@
+<?xml version="1.0"?>
+<output name="127.0.0.1" type="FLIGHTGEAR" port="5514" protocol="UDP" rate="1200.000000">
+  <time type="simulation" resolution="1e-6"/>
+</output>
