@@ -108,6 +108,7 @@ void NavEKF3_core::setWindMagStateLearningMode()
     if (!inhibitMagStates && setMagInhibit) {
         inhibitMagStates = true;
         updateStateIndexLim();
+        // variances will be reset in CovariancePrediction
     } else if (inhibitMagStates && !setMagInhibit) {
         inhibitMagStates = false;
         updateStateIndexLim();
@@ -121,7 +122,7 @@ void NavEKF3_core::setWindMagStateLearningMode()
             P[21][21] = bodyMagFieldVar.z;
         } else {
             // set the variances equal to the observation variances
-            for (uint8_t index=18; index<=21; index++) {
+            for (uint8_t index=16; index<=21; index++) {
                 P[index][index] = sq(frontend->_magNoise);
             }
 
@@ -164,6 +165,7 @@ void NavEKF3_core::setWindMagStateLearningMode()
     if (onGround) {
         finalInflightYawInit = false;
         finalInflightMagInit = false;
+        magFieldLearned = false;
     }
 
     updateStateIndexLim();
@@ -273,7 +275,7 @@ void NavEKF3_core::setAidingMode()
 
             // Check if the loss of position accuracy has become critical
             bool posAidLossCritical = false;
-            if (!posAiding ) {
+            if (!posAiding) {
                 uint16_t maxLossTime_ms;
                 if (!velAiding) {
                     maxLossTime_ms = frontend->posRetryTimeNoVel_ms;
@@ -287,7 +289,7 @@ void NavEKF3_core::setAidingMode()
             // This is a special case for when we are a fixed wing aircraft vehicle that has landed and
             // has no yaw measurement that works when static. Declare the yaw as unaligned (unknown)
             // and declare attitude aiding loss so that we fall back into a non-aiding mode
-            if (assume_zero_sideslip() && onGround && !use_compass()){
+            if (assume_zero_sideslip() && onGround && !use_compass() && !using_external_yaw()) {
                 yawAlignComplete = false;
                 finalInflightYawInit = false;
                 attAidLossCritical = true;
@@ -304,7 +306,7 @@ void NavEKF3_core::setAidingMode()
              } else if (posAidLossCritical) {
                 // if the loss of position is critical, declare all sources of position aiding as being timed out
                 posTimeout = true;
-                velTimeout = true;
+                velTimeout = !optFlowUsed && !gpsVelUsed && !bodyOdmUsed;
                 rngBcnTimeout = true;
                 gpsNotAvailable = true;
 
@@ -326,7 +328,7 @@ void NavEKF3_core::setAidingMode()
             // Reset the normalised innovation to avoid false failing bad fusion tests
             velTestRatio = 0.0f;
             posTestRatio = 0.0f;
-             // store the current position to be used to keep reporting the last known position
+            // store the current position to be used to keep reporting the last known position
             lastKnownPositionNE.x = stateStruct.position.x;
             lastKnownPositionNE.y = stateStruct.position.y;
             // initialise filtered altitude used to provide a takeoff reference to current baro on disarm
@@ -406,11 +408,10 @@ void NavEKF3_core::setAidingMode()
 void NavEKF3_core::checkAttitudeAlignmentStatus()
 {
     // Check for tilt convergence - used during initial alignment
-    // Once the tilt variances have reduced to equivalent of 3deg uncertainty, re-set the yaw and magnetic field states
+    // Once the tilt variances have reduced, re-set the yaw and magnetic field states
     // and declare the tilt alignment complete
     if (!tiltAlignComplete) {
-        Vector3f angleErrVarVec = calcRotVecVariances();
-        if ((angleErrVarVec.x + angleErrVarVec.y) < sq(0.05235f)) {
+        if (tiltErrorVariance < sq(radians(5.0f))) {
             tiltAlignComplete = true;
             gcs().send_text(MAV_SEVERITY_INFO, "EKF3 IMU%u tilt alignment complete",(unsigned)imu_index);
         }
@@ -418,7 +419,7 @@ void NavEKF3_core::checkAttitudeAlignmentStatus()
 
     // submit yaw and magnetic field reset request
     if (!yawAlignComplete && tiltAlignComplete && use_compass()) {
-            magYawResetRequest = true;
+        magYawResetRequest = true;
     }
 
 }

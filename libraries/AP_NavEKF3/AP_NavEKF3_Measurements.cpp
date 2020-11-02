@@ -278,6 +278,8 @@ void NavEKF3_core::tryChangeCompass(void)
             magStateResetRequest = true;
             // declare the field unlearned so that the reset request will be obeyed
             magFieldLearned = false;
+            // reset body mag variances on next CovariancePrediction
+            needMagBodyVarReset = true;
             return;
         }
     }
@@ -339,6 +341,11 @@ void NavEKF3_core::readMagData()
             stateStruct.body_magfield.zero();
             // clear the measurement buffer
             storedMag.reset();
+
+            // reset body mag variances on next
+            // CovariancePrediction. This copes with possible errors
+            // in the new offsets
+            needMagBodyVarReset = true;
         }
         lastMagOffsets = nowMagOffsets;
         lastMagOffsetsValid = true;
@@ -573,6 +580,9 @@ void NavEKF3_core::readGpsData()
 
             // read the NED velocity from the GPS
             gpsDataNew.vel = gps.velocity(selected_gps);
+
+            // position and velocity are not yet corrected for sensor position
+            gpsDataNew.corrected = false;
 
             // Use the speed and position accuracy from the GPS if available, otherwise set it to zero.
             // Apply a decaying envelope filter with a 5 second time constant to the raw accuracy data
@@ -1044,7 +1054,8 @@ void NavEKF3_core::writeExtNavVelData(const Vector3f &vel, float err, uint32_t t
     const ext_nav_vel_elements extNavVelNew {
         vel,
         err,
-        timeStamp_ms
+        timeStamp_ms,
+        false
     };
     storedExtNavVel.push(extNavVelNew);
 }

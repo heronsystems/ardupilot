@@ -95,6 +95,7 @@ public:
     bool in_vtol_mode(void) const;
     bool in_vtol_posvel_mode(void) const;
     void update_throttle_hover();
+    bool show_vtol_view() const;
 
     // vtol help for is_flying()
     bool is_flying(void);
@@ -129,6 +130,9 @@ public:
     // check if we have completed transition to fixed wing
     bool tailsitter_transition_fw_complete(void);
 
+    // return true if we are a tailsitter in FW flight
+    bool is_tailsitter_in_fw_flight(void) const;
+
     // check if we have completed transition to vtol
     bool tailsitter_transition_vtol_complete(void) const;
 
@@ -158,6 +162,7 @@ public:
         int16_t  climb_rate;
         float    throttle_mix;
         float    speed_scaler;
+        uint8_t  transition_state;
     };
 
     MAV_TYPE get_mav_type(void) const;
@@ -566,6 +571,7 @@ private:
         OPTION_AIRMODE=(1<<9),
         OPTION_DISARMED_TILT=(1<<10),
         OPTION_DELAY_ARMING=(1<<11),
+        OPTION_DISABLE_SYNTHETIC_AIRSPEED_ASSIST=(1<<12),
     };
 
     AP_Float takeoff_failure_scalar;

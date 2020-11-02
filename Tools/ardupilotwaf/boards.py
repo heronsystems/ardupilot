@@ -454,6 +454,10 @@ class sitl(Board):
                 if fnmatch.fnmatch(f, "font*bin"):
                     env.ROMFS_FILES += [(f,'libraries/AP_OSD/fonts/'+f)]
 
+        for f in os.listdir('Tools/autotest/models'):
+            if fnmatch.fnmatch(f, "*.json") or fnmatch.fnmatch(f, "*.parm"):
+                env.ROMFS_FILES += [('models/'+f,'Tools/autotest/models/'+f)]
+                    
         # embed any scripts from ROMFS/scripts
         if os.path.exists('ROMFS/scripts'):
             for f in os.listdir('ROMFS/scripts'):
@@ -528,7 +532,6 @@ class chibios(Board):
             '-Wfatal-errors',
             '-Werror=uninitialized',
             '-Werror=init-self',
-            '-Wframe-larger-than=1024',
             '-Werror=unused-but-set-variable',
             '-Wno-missing-field-initializers',
             '-Wno-trigraphs',
@@ -628,6 +631,8 @@ class chibios(Board):
         gcc_whitelist = [
             ('4','9','3'),
             ('6','3','1'),
+            ('9','2','1'),
+            ('9','3','1'),
         ]
 
         if cfg.options.Werror or cfg.env.CC_VERSION in gcc_whitelist:

@@ -21,6 +21,7 @@
 #include <AP_HAL/AP_HAL.h>
 #include "AP_AHRS.h"
 #include "AP_AHRS_View.h"
+#include <AP_BoardConfig/AP_BoardConfig.h>
 #include <AP_Module/AP_Module.h>
 #include <AP_GPS/AP_GPS.h>
 #include <AP_Baro/AP_Baro.h>
@@ -50,6 +51,10 @@ AP_AHRS_NavEKF::AP_AHRS_NavEKF(uint8_t flags) :
 // init sets up INS board orientation
 void AP_AHRS_NavEKF::init()
 {
+    // EKF1 is no longer supported - handle case where it is selected
+    if (_ekf_type.get() == 1) {
+        AP_BoardConfig::config_error("EKF1 not available");
+    }
 #if !HAL_NAVEKF2_AVAILABLE && HAL_NAVEKF3_AVAILABLE
     if (_ekf_type.get() == 2) {
         _ekf_type.set(3);
@@ -117,11 +122,6 @@ void AP_AHRS_NavEKF::update(bool skip_ins_update)
     // drop back to normal priority if we were boosted by the INS
     // calling delay_microseconds_boost()
     hal.scheduler->boost_end();
-    
-    // EKF1 is no longer supported - handle case where it is selected
-    if (_ekf_type == 1) {
-        _ekf_type.set(2);
-    }
 
     update_DCM(skip_ins_update);
 
@@ -1344,34 +1344,42 @@ bool AP_AHRS_NavEKF::healthy(void) const
     return AP_AHRS_DCM::healthy();
 }
 
-bool AP_AHRS_NavEKF::prearm_healthy(void) const
+// returns false if we fail arming checks, in which case the buffer will be populated with a failure message
+bool AP_AHRS_NavEKF::pre_arm_check(char *failure_msg, uint8_t failure_msg_len) const
 {
-    bool prearm_health = false;
     switch (ekf_type()) {
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
     case EKFType::SITL:
 #endif
     case EKFType::NONE:
-        prearm_health = true;
-        break;
+        if (!healthy()) {
+            hal.util->snprintf(failure_msg, failure_msg_len, "Not healthy");
+            return false;
+        }
+        return true;
 
 #if HAL_NAVEKF2_AVAILABLE
     case EKFType::TWO:
-        if (_ekf2_started && EKF2.all_cores_healthy()) {
-            prearm_health = true;
+        if (!_ekf2_started) {
+            hal.util->snprintf(failure_msg, failure_msg_len, "EKF2 not started");
+            return false;
         }
-        break;
+        return EKF2.pre_arm_check(failure_msg, failure_msg_len);
 #endif
 
 #if HAL_NAVEKF3_AVAILABLE
     case EKFType::THREE:
-        if (_ekf3_started && EKF3.all_cores_healthy()) {
-            prearm_health = true;
+        if (!_ekf3_started) {
+            hal.util->snprintf(failure_msg, failure_msg_len, "EKF3 not started");
+            return false;
         }
-        break;
+        return EKF3.pre_arm_check(failure_msg, failure_msg_len);
 #endif
     }
-   return prearm_health && healthy();
+
+    // if we get here then ekf type is invalid
+    hal.util->snprintf(failure_msg, failure_msg_len, "invalid EKF type");
+    return false;
 }
 
 void AP_AHRS_NavEKF::set_ekf_use(bool setting)
@@ -1615,32 +1623,6 @@ void AP_AHRS_NavEKF::getCorrectedDeltaVelocityNED(Vector3f& ret, float& dt) cons
     ret -= accel_bias*dt;
     ret = _dcm_matrix * get_rotation_autopilot_body_to_vehicle_body() * ret;
     ret.z += GRAVITY_MSS*dt;
-}
-
-// report any reason for why the backend is refusing to initialise
-const char *AP_AHRS_NavEKF::prearm_failure_reason(void) const
-{
-    switch (ekf_type()) {
-    case EKFType::NONE:
-        return nullptr;
-
-#if HAL_NAVEKF2_AVAILABLE
-    case EKFType::TWO:
-        return EKF2.prearm_failure_reason();
-#endif
-
-#if HAL_NAVEKF3_AVAILABLE
-    case EKFType::THREE:
-        return EKF3.prearm_failure_reason();
-#endif
-
-#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
-    case EKFType::SITL:
-        return nullptr;
-#endif
-    }
-
-    return nullptr;
 }
 
 // check all cores providing consistent attitudes for prearm checks
@@ -2069,7 +2051,7 @@ bool AP_AHRS_NavEKF::get_innovations(Vector3f &velInnov, Vector3f &posInnov, Vec
 // indicates prefect consistency between the measurement and the EKF solution and a value of of 1 is the maximum
 // inconsistency that will be accpeted by the filter
 // boolean false is returned if variances are not available
-bool AP_AHRS_NavEKF::get_variances(float &velVar, float &posVar, float &hgtVar, Vector3f &magVar, float &tasVar, Vector2f &offset) const
+bool AP_AHRS_NavEKF::get_variances(float &velVar, float &posVar, float &hgtVar, Vector3f &magVar, float &tasVar) const
 {
     switch (ekf_type()) {
     case EKFType::NONE:
@@ -2077,17 +2059,21 @@ bool AP_AHRS_NavEKF::get_variances(float &velVar, float &posVar, float &hgtVar, 
         return false;
 
 #if HAL_NAVEKF2_AVAILABLE
-    case EKFType::TWO:
+    case EKFType::TWO: {
         // use EKF to get variance
-        EKF2.getVariances(-1,velVar, posVar, hgtVar, magVar, tasVar, offset);
+        Vector2f offset;
+        EKF2.getVariances(-1, velVar, posVar, hgtVar, magVar, tasVar, offset);
         return true;
+    }
 #endif
 
 #if HAL_NAVEKF3_AVAILABLE
-    case EKFType::THREE:
+    case EKFType::THREE: {
         // use EKF to get variance
-        EKF3.getVariances(-1,velVar, posVar, hgtVar, magVar, tasVar, offset);
+        Vector2f offset;
+        EKF3.getVariances(-1, velVar, posVar, hgtVar, magVar, tasVar, offset);
         return true;
+    }
 #endif
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
@@ -2097,7 +2083,6 @@ bool AP_AHRS_NavEKF::get_variances(float &velVar, float &posVar, float &hgtVar, 
         hgtVar = 0;
         magVar.zero();
         tasVar = 0;
-        offset.zero();
         return true;
 #endif
     }

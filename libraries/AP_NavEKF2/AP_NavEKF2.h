@@ -22,13 +22,11 @@
  */
 #pragma once
 
+#include <AP_Common/Location.h>
 #include <AP_Math/AP_Math.h>
 #include <AP_Param/AP_Param.h>
 #include <GCS_MAVLink/GCS_MAVLink.h>
 #include <AP_NavEKF/AP_Nav_Common.h>
-#include <AP_Airspeed/AP_Airspeed.h>
-#include <AP_Compass/AP_Compass.h>
-#include <AP_Logger/LogStructure.h>
 
 class NavEKF2_core;
 class AP_AHRS;
@@ -61,8 +59,9 @@ public:
     
     // Check basic filter health metrics and return a consolidated health status
     bool healthy(void) const;
-    // Ensure that all started cores are considered healthy
-    bool all_cores_healthy(void) const;
+
+    // returns false if we fail arming checks, in which case the buffer will be populated with a failure message
+    bool pre_arm_check(char *failure_msg, uint8_t failure_msg_len) const;
 
     // returns the index of the primary core
     // return -1 if no primary core selected
@@ -313,9 +312,6 @@ public:
     // returns the time of the last reset or 0 if no reset has ever occurred
     uint32_t getLastPosDownReset(float &posDelta);
 
-    // report any reason for why the backend is refusing to initialise
-    const char *prearm_failure_reason(void) const;
-
     // set and save the _baroAltNoise parameter
     void set_baro_alt_noise(float noise) { _baroAltNoise.set_and_save(noise); };
 
@@ -495,7 +491,7 @@ private:
     uint64_t imuSampleTime_us;
     
     struct {
-        uint32_t last_function_call;  // last time getLastYawYawResetAngle was called
+        uint32_t last_function_call;  // last time getLastYawResetAngle was called
         bool core_changed;            // true when a core change happened and hasn't been consumed, false otherwise
         uint32_t last_primary_change; // last time a primary has changed
         float core_delta;             // the amount of yaw change between cores when a change happened
