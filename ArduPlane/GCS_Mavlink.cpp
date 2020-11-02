@@ -24,6 +24,7 @@ MAV_MODE GCS_MAVLINK_Plane::base_mode() const
     case Mode::Number::TRAINING:
     case Mode::Number::ACRO:
     case Mode::Number::QACRO:
+    case Mode::Number::AI_DEFL:
         _base_mode = MAV_MODE_FLAG_MANUAL_INPUT_ENABLED;
         break;
     case Mode::Number::STABILIZE:
@@ -961,7 +962,11 @@ MAV_RESULT GCS_MAVLINK_Plane::handle_command_int_packet(const mavlink_command_in
 MAV_RESULT GCS_MAVLINK_Plane::handle_command_long_packet(const mavlink_command_long_t &packet)
 {
     switch(packet.command) {
-
+    case MAV_CMD_AI_DEFLECTION:
+    {
+        printf("I saw this command type.");
+        return MAV_RESULT_ACCEPTED;
+    }
     case MAV_CMD_DO_CHANGE_SPEED: {
         // if we're in failsafe modes (e.g., RTL, LOITER) or in pilot
         // controlled modes (e.g., MANUAL, TRAINING)
@@ -1178,6 +1183,7 @@ void GCS_MAVLINK_Plane::handleMessage(const mavlink_message_t &msg)
     // receive a fence point from GCS and store in EEPROM
     case MAVLINK_MSG_ID_FENCE_POINT: {
         mavlink_fence_point_t packet;
+        
         mavlink_msg_fence_point_decode(&msg, &packet);
         if (plane.g.fence_action != FENCE_ACTION_NONE) {
             send_text(MAV_SEVERITY_WARNING,"Fencing must be disabled");

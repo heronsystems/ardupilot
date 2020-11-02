@@ -161,6 +161,9 @@ public:
     friend class ModeTakeoff;
     friend class ModeThermal;
 
+    //Ken: This is where we are adding the explicit AI modes we need to support testing.
+    friend class ModeAI_Deflection;
+
     Plane(void);
 
 private:
@@ -286,6 +289,9 @@ private:
     ModeThermal mode_thermal;
 #endif
 
+    //Ken: Added Support for AI Modes
+    ModeAI_Deflection mode_ai_deflection;
+    
     // This is the state of the flight control system
     // There are multiple states defined such as MANUAL, FBW-A, AUTO
     Mode *control_mode = &mode_initializing;

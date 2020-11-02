@@ -152,7 +152,8 @@ void Plane::stabilize_stick_mixing_direct()
         control_mode == &mode_qrtl ||
         control_mode == &mode_qacro ||
         control_mode == &mode_training ||
-        control_mode == &mode_qautotune) {
+        control_mode == &mode_qautotune ||
+        control_mode == &mode_ai_deflection ) {
         return;
     }
     int16_t aileron = SRV_Channels::get_output_scaled(SRV_Channel::k_aileron);
@@ -184,6 +185,7 @@ void Plane::stabilize_stick_mixing_fbw()
         control_mode == &mode_qacro ||
         control_mode == &mode_training ||
         control_mode == &mode_qautotune ||
+        control_mode == &mode_ai_deflection ||      
         (control_mode == &mode_auto && g.auto_fbw_steer == 42)) {
         return;
     }
@@ -403,6 +405,8 @@ void Plane::stabilize()
     if (control_mode == &mode_training) {
         stabilize_training(speed_scaler);
     } else if (control_mode == &mode_acro) {
+        stabilize_acro(speed_scaler);
+    } else if (control_mode == &mode_ai_deflection) {
         stabilize_acro(speed_scaler);
     } else if ((control_mode == &mode_qstabilize ||
                 control_mode == &mode_qhover ||
