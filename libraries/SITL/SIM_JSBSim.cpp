@@ -60,12 +60,7 @@ JSBSim::JSBSim(const char *frame_str) :
     if (model_name != nullptr) {
         jsbsim_model = model_name + 1;
     }
-    // control_port = 5505 + instance*10;
-    // fdm_port = 5504 + instance*10;
     num_motors = 2;
-
-    // printf("JSBSim backend started: control_port=%u fdm_port=%u\n",
-    //        control_port, fdm_port);
 }
 
 /*
@@ -77,10 +72,12 @@ bool JSBSim::create_templates(void)
         return true;
     }
 
-    control_port = 5505 + instance*10;
-    fdm_port = 5504 + instance*10;
+    // Moved the next three lines from constructor into this method:
+    control_port = 5505 + instance*10; // Sets control_port based on instance number
+    fdm_port = 5504 + instance*10; // Sets fdm port based on instance number
     printf("JSBSim backend started: control_port=%u fdm_port=%u\n",
            control_port, fdm_port);
+    // Moved above lines from constructor into this method
 
     asprintf(&jsbsim_script, "%s/jsbsim_start_%u.xml", autotest_dir, instance);
     asprintf(&jsbsim_fgout,  "%s/jsbsim_fgout_%u.xml", autotest_dir, instance);
