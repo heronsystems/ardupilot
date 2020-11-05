@@ -1,5 +1,5 @@
 class VehicleInfo(object):
-
+    
     def __init__(self):
         """
         make_target: option passed to make to create binaries.  Usually sitl, and "-debug" may be appended if -D is passed to sim_vehicle.py
@@ -341,9 +341,6 @@ class VehicleInfo(object):
         frames = self.options[vehicle]["frames"]
         if frame in frames:
             ret = self.options[vehicle]["frames"][frame]
-#            defaults = ['+', 'quad', 'X']
-#            ret['default_params_filename'] = 'default_params/copter{}_{}.parm'.format('-' + frame if frame not in defaults, opts.instance)
-            ret['default_params_filename'] = 'default_params/MACE_params/copter_{}.parm'.format(opts.instance)
         else:
             for p in ["octa", "tri", "y6", "firefly", "heli", "gazebo", "last_letter", "jsbsim", "quadplane", "plane-elevon", "plane-vtail", "plane", "airsim"]:
                 if frame.startswith(p):
