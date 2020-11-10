@@ -75,8 +75,10 @@ public:
     virtual bool is_vtol_mode() const { return false; }
     virtual bool is_vtol_man_throttle() const;
     virtual bool is_vtol_man_mode() const { return false; }
+
     // guided or adsb mode
     virtual bool is_guided_mode() const { return false; }
+    virtual bool is_AI_control() const {return false; }
 
     // true if mode can have terrain following disabled by switch
     virtual bool allows_terrain_disable() const { return false; }
@@ -566,7 +568,17 @@ protected:
 
 class ModeAI_Deflection : public Mode
 {
+
+private:
+    struct {
+        int16_t stickAileron = 1500;
+        int16_t stickElevator = 1500;
+        int16_t stickThrottle = 1500;
+        int16_t stickRudder = 1500;
+    } _servoOutput;
+
 public:
+    ModeAI_Deflection();
 
     Mode::Number mode_number() const override { return Mode::Number::AI_DEFL; }
     const char *name() const override { return "AI_DEFL"; }
@@ -575,9 +587,16 @@ public:
     // methods that affect movement of the vehicle in this mode
     void update() override;
 
-protected:
+public:
+    bool is_AI_control() const override;
 
+    bool handleLongCommand(const mavlink_command_long_t &packet);
+
+protected:
     bool _enter() override;
     void _exit() override;
+
+
+
 };
 

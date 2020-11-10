@@ -877,7 +877,6 @@ void AP_Logger::WriteV(const char *name, const char *labels, const char *units, 
     }
 }
 
-
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
 void AP_Logger::assert_same_fmt_for_name(const AP_Logger::log_write_fmt *f,
                                                const char *name,
@@ -1231,6 +1230,17 @@ void AP_Logger::Write_Event(LogEvent id)
     WriteCriticalBlock(&pkt, sizeof(pkt));
 }
 
+void AP_Logger::WriteAI(const uint64_t &time_ms, const float &AI_Aileron, const int16_t &PWM_Aileron)
+{
+    struct log_AIDeflection pkt = {
+        LOG_PACKET_HEADER_INIT(LOG_AIDEFL_MSG),
+        time_us : time_ms,
+        normalizedAileron : AI_Aileron,
+        pwmAileron : PWM_Aileron
+    };
+    WriteBlock(&pkt, sizeof(pkt));
+}
+
 // Write an error packet
 void AP_Logger::Write_Error(LogErrorSubsystem sub_system,
                             LogErrorCode error_code)
@@ -1272,6 +1282,7 @@ bool AP_Logger::log_while_disarmed(void) const
 
     return false;
 }
+
 
 namespace AP {
 

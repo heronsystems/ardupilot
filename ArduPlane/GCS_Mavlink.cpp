@@ -964,8 +964,23 @@ MAV_RESULT GCS_MAVLINK_Plane::handle_command_long_packet(const mavlink_command_l
     switch(packet.command) {
     case MAV_CMD_AI_DEFLECTION:
     {
-        printf("I saw this command type.");
-        return MAV_RESULT_ACCEPTED;
+        MAV_RESULT commandResult = MAV_RESULT_ACCEPTED;
+        printf("I saw a command of AI deflection.");
+
+        if (plane.control_mode == &plane.mode_ai_deflection) { // don't execute the command unless we are in the AI mode
+
+            plane.mode_ai_deflection.handleLongCommand(packet);
+            
+            // a AI deflection control message updates the time for the failsafe purposes
+            uint32_t tnow = AP_HAL::millis();
+            plane.failsafe.last_AI_ms = tnow;
+
+        }
+        else
+        {
+            commandResult = MAV_RESULT_FAILED;
+        }
+        return commandResult;
     }
     case MAV_CMD_DO_CHANGE_SPEED: {
         // if we're in failsafe modes (e.g., RTL, LOITER) or in pilot
