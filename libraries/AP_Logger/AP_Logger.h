@@ -297,7 +297,7 @@ public:
     void WriteCritical(const char *name, const char *labels, const char *units, const char *mults, const char *fmt, ...);
     void WriteV(const char *name, const char *labels, const char *units, const char *mults, const char *fmt, va_list arg_list, bool is_critical=false);
 
-    void WriteTestEvent(const uint8_t &type, const const char *text);
+    void WriteTestEvent(const uint8_t &type, const char *text);
     void WriteAI(const uint64_t &time_ms, const float &AI_Aileron, const int16_t &PWM_Aileron);
     
     // This structure provides information on the internal member data of a PID for logging purposes

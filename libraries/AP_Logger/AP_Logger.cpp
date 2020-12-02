@@ -1229,6 +1229,10 @@ void AP_Logger::Write_Event(LogEvent id)
     };
     WriteCriticalBlock(&pkt, sizeof(pkt));
 }
+void AP_Logger::WriteTestEvent(const uint8_t &type, const char *text)
+{
+
+}
 
 void AP_Logger::WriteAI(const uint64_t &time_ms, const float &AI_Aileron, const int16_t &PWM_Aileron)
 {
