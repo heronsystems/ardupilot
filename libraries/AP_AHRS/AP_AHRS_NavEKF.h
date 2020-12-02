@@ -188,9 +188,6 @@ public:
     // Write velocity data from an external navigation system
     void writeExtNavVelData(const Vector3f &vel, float err, uint32_t timeStamp_ms, uint16_t delay_ms) override;
 
-    // inhibit GPS usage
-    uint8_t setInhibitGPS(void);
-
     // get speed limit
     void getEkfControlLimits(float &ekfGndSpdLimit, float &ekfNavVelGainScaler) const;
 
@@ -266,6 +263,10 @@ public:
     // boolean false is returned if variances are not available
     bool get_variances(float &velVar, float &posVar, float &hgtVar, Vector3f &magVar, float &tasVar) const override;
 
+    // get a source's velocity innovations
+    // returns true on success and results are placed in innovations and variances arguments
+    bool get_vel_innovations_and_variances_for_source(uint8_t source, Vector3f &innovations, Vector3f &variances) const override WARN_IF_UNUSED;
+
     // returns the expected NED magnetic field
     bool get_mag_field_NED(Vector3f& ret) const;
 
@@ -276,12 +277,6 @@ public:
     void setTouchdownExpected(bool val);
 
     bool getGpsGlitchStatus() const;
-
-    // used by Replay to force start at right timestamp
-    void force_ekf_start(void) { _force_ekf = true; }
-
-    // is the EKF backend doing its own sensor logging?
-    bool have_ekf_logging(void) const override;
 
     // return the index of the airspeed we should use for airspeed measurements
     // with multiple airspeed sensors and airspeed affinity in EKF3, it is possible to have switched
@@ -304,6 +299,9 @@ public:
 
     // request EKF yaw reset to try and avoid the need for an EKF lane switch or failsafe
     void request_yaw_reset(void) override;
+
+    // set position, velocity and yaw sources to either 0=primary, 1=secondary, 2=tertiary
+    void set_posvelyaw_source_set(uint8_t source_set_idx) override;
 
     void Log_Write();
 
@@ -348,8 +346,7 @@ private:
     bool _ekf3_started;
     void update_EKF3(void);
 #endif
-    bool _force_ekf;
-    
+
     // rotation from vehicle body to NED frame
     Matrix3f _dcm_matrix;
     Vector3f _dcm_attitude;
@@ -367,6 +364,16 @@ private:
 
     // get the index of the current primary IMU
     uint8_t get_primary_IMU_index(void) const;
+
+    // avoid setting current state repeatedly across all cores on all EKFs:
+    enum class TriState {
+        False = 0,
+        True = 1,
+        UNKNOWN = 3,
+    };
+    TriState touchdownExpectedState = TriState::UNKNOWN;
+    TriState takeoffExpectedState = TriState::UNKNOWN;
+    TriState terrainHgtStableState = TriState::UNKNOWN;
 
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
     SITL::SITL *_sitl;

@@ -13,8 +13,10 @@
    maximum number of INS instances available on this platform. If more
    than 1 then redundant sensors may be available
  */
+#ifndef INS_MAX_INSTANCES
 #define INS_MAX_INSTANCES 3
-#define INS_MAX_BACKENDS  6
+#endif
+#define INS_MAX_BACKENDS  2*INS_MAX_INSTANCES
 #define INS_MAX_NOTCHES 4
 #ifndef INS_VIBRATION_CHECK_INSTANCES
   #if HAL_MEM_CLASS >= HAL_MEM_CLASS_300
@@ -124,7 +126,7 @@ public:
     bool get_delta_angle(Vector3f &delta_angle) const { return get_delta_angle(_primary_gyro, delta_angle); }
 
     float get_delta_angle_dt(uint8_t i) const;
-    float get_delta_angle_dt() const { return get_delta_angle_dt(_primary_accel); }
+    float get_delta_angle_dt() const { return get_delta_angle_dt(_primary_gyro); }
 
     //get delta velocity if available
     bool get_delta_velocity(uint8_t i, Vector3f &delta_velocity) const;

@@ -44,6 +44,12 @@ const AP_Param::GroupInfo AP_Vehicle::var_info[] = {
     AP_SUBGROUPINFO(frsky_parameters, "FRSKY_", 6, AP_Vehicle, AP_Frsky_Parameters),
 #endif
 
+#if GENERATOR_ENABLED
+    // @Group: GEN_
+    // @Path: ../AP_Generator/AP_Generator.cpp
+    AP_SUBGROUPINFO(generator, "GEN_", 7, AP_Vehicle, AP_Generator),
+#endif
+
     AP_GROUPEND
 };
 
@@ -130,6 +136,12 @@ void AP_Vehicle::setup()
 #if AP_PARAM_KEY_DUMP
     AP_Param::show_all(hal.console, true);
 #endif
+
+    send_watchdog_reset_statustext();
+
+#if GENERATOR_ENABLED
+    generator.init();
+#endif
 }
 
 void AP_Vehicle::loop()
@@ -164,6 +176,9 @@ const AP_Scheduler::Task AP_Vehicle::scheduler_tasks[] = {
     SCHED_TASK(update_dynamic_notch,                   200,    200),
     SCHED_TASK_CLASS(AP_VideoTX,   &vehicle.vtx,            update,                    2, 100),
     SCHED_TASK(send_watchdog_reset_statustext,         0.1,     20),
+#if GENERATOR_ENABLED
+    SCHED_TASK_CLASS(AP_Generator, &vehicle.generator,      update,                   10,  50),
+#endif
 };
 
 void AP_Vehicle::get_common_scheduler_tasks(const AP_Scheduler::Task*& tasks, uint8_t& num_tasks)
@@ -206,7 +221,11 @@ void AP_Vehicle::scheduler_delay_callback()
     }
     if (tnow - last_5s > 5000) {
         last_5s = tnow;
-        gcs().send_text(MAV_SEVERITY_INFO, "Initialising ArduPilot");
+        if (AP_BoardConfig::in_config_error()) {
+            gcs().send_text(MAV_SEVERITY_CRITICAL, "Config Error: fix problem then reboot");
+        } else {
+            gcs().send_text(MAV_SEVERITY_INFO, "Initialising ArduPilot");
+        }
     }
 
     logger.EnableWrites(true);

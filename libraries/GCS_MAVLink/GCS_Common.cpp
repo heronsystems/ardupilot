@@ -2169,27 +2169,36 @@ void GCS_MAVLINK::handle_set_mode(const mavlink_message_t &msg)
 */
 MAV_RESULT GCS_MAVLINK::_set_mode_common(const MAV_MODE _base_mode, const uint32_t _custom_mode)
 {
-    MAV_RESULT result = MAV_RESULT_UNSUPPORTED;
     // only accept custom modes because there is no easy mapping from Mavlink flight modes to AC flight modes
     if (uint32_t(_base_mode) & MAV_MODE_FLAG_CUSTOM_MODE_ENABLED) {
-        if (AP::vehicle()->set_mode(_custom_mode, ModeReason::GCS_COMMAND)) {
-            result = MAV_RESULT_ACCEPTED;
+        if (!AP::vehicle()->set_mode(_custom_mode, ModeReason::GCS_COMMAND)) {
+            // often we should be returning DENIED rather than FAILED
+            // here.  Perhaps a "has_mode" callback on AP_::vehicle()
+            // would do?
+            return MAV_RESULT_FAILED;
         }
-    } else if (_base_mode == (MAV_MODE)MAV_MODE_FLAG_DECODE_POSITION_SAFETY) {
+        return MAV_RESULT_ACCEPTED;
+    }
+
+    if (_base_mode == (MAV_MODE)MAV_MODE_FLAG_DECODE_POSITION_SAFETY) {
         // set the safety switch position. Must be in a command by itself
         if (_custom_mode == 0) {
             // turn safety off (pwm outputs flow to the motors)
             hal.rcout->force_safety_off();
-            result = MAV_RESULT_ACCEPTED;
-        } else if (_custom_mode == 1) {
+            return MAV_RESULT_ACCEPTED;
+        }
+        if (_custom_mode == 1) {
             // turn safety on (no pwm outputs to the motors)
             if (hal.rcout->force_safety_on()) {
-                result = MAV_RESULT_ACCEPTED;
+                return MAV_RESULT_ACCEPTED;
             }
+            return MAV_RESULT_FAILED;
         }
+        return MAV_RESULT_DENIED;
     }
 
-    return result;
+    // Command is invalid (is supported but has invalid parameters)
+    return MAV_RESULT_DENIED;
 }
 
 /*
@@ -3163,7 +3172,7 @@ void GCS_MAVLINK::handle_obstacle_distance(const mavlink_message_t &msg)
 
 void GCS_MAVLINK::handle_osd_param_config(const mavlink_message_t &msg)
 {
-#if OSD_ENABLED
+#if OSD_PARAM_ENABLED
     AP_OSD *osd = AP::osd();
     if (osd != nullptr) {
         osd->handle_msg(msg, *this);
@@ -4440,7 +4449,7 @@ void GCS_MAVLINK::send_set_position_target_global_int(uint8_t target_system, uin
 void GCS_MAVLINK::send_generator_status() const
 {
 #if GENERATOR_ENABLED
-    AP_Generator_RichenPower *generator = AP::generator();
+    AP_Generator *generator = AP::generator();
     if (generator == nullptr) {
         return;
     }
@@ -4937,7 +4946,8 @@ void GCS::update_passthru(void)
     WITH_SEMAPHORE(_passthru.sem);
     uint32_t now = AP_HAL::millis();
 
-    bool enabled = AP::serialmanager().get_passthru(_passthru.port1, _passthru.port2, _passthru.timeout_s);
+    bool enabled = AP::serialmanager().get_passthru(_passthru.port1, _passthru.port2, _passthru.timeout_s,
+                                                    _passthru.baud1, _passthru.baud2);
     if (enabled && !_passthru.enabled) {
         _passthru.start_ms = now;
         _passthru.last_ms = 0;
@@ -4983,6 +4993,8 @@ void GCS::passthru_timer(void)
             return;
         }
         _passthru.start_ms = 0;
+        _passthru.port1->begin(_passthru.baud1);
+        _passthru.port2->begin(_passthru.baud2);
     }
 
     // while pass-thru is enabled lock both ports. They remain
@@ -5062,8 +5074,10 @@ uint64_t GCS_MAVLINK::capabilities() const
         ret |= MAV_PROTOCOL_CAPABILITY_MISSION_FENCE;
     }
 
-    ret |= MAV_PROTOCOL_CAPABILITY_FTP;
-
+    if (!AP_BoardConfig::ftp_disabled()){  //if ftp disable board option is not set
+        ret |= MAV_PROTOCOL_CAPABILITY_FTP;
+    }
+ 
     return ret;
 }
 
