@@ -2,37 +2,16 @@
 
 #include "AP_NavEKF3.h"
 #include "AP_NavEKF3_core.h"
-#include <AP_AHRS/AP_AHRS.h>
 #include <GCS_MAVLink/GCS.h>
-#include <AP_GPS/AP_GPS.h>
 #include <AP_VisualOdom/AP_VisualOdom.h>
 #include <AP_Logger/AP_Logger.h>
-
-extern const AP_HAL::HAL& hal;
+#include <AP_DAL/AP_DAL.h>
 
 // constructor
 NavEKF3_core::NavEKF3_core(NavEKF3 *_frontend) :
-    _perf_UpdateFilter(hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK3_UpdateFilter")),
-    _perf_CovariancePrediction(hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK3_CovariancePrediction")),
-    _perf_FuseVelPosNED(hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK3_FuseVelPosNED")),
-    _perf_FuseMagnetometer(hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK3_FuseMagnetometer")),
-    _perf_FuseAirspeed(hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK3_FuseAirspeed")),
-    _perf_FuseSideslip(hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK3_FuseSideslip")),
-    _perf_TerrainOffset(hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK3_TerrainOffset")),
-    _perf_FuseOptFlow(hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK3_FuseOptFlow")),
-    _perf_FuseBodyOdom(hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK3_FuseBodyOdom")),
-    frontend(_frontend)
+    frontend(_frontend),
+    dal(AP::dal())
 {
-    _perf_test[0] = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK3_Test0");
-    _perf_test[1] = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK3_Test1");
-    _perf_test[2] = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK3_Test2");
-    _perf_test[3] = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK3_Test3");
-    _perf_test[4] = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK3_Test4");
-    _perf_test[5] = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK3_Test5");
-    _perf_test[6] = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK3_Test6");
-    _perf_test[7] = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK3_Test7");
-    _perf_test[8] = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK3_Test8");
-    _perf_test[9] = hal.util->perf_alloc(AP_HAL::Util::PC_ELAPSED, "EK3_Test9");
     firstInitTime_ms = 0;
     lastInitFailReport_ms = 0;
 }
@@ -44,7 +23,6 @@ bool NavEKF3_core::setup_core(uint8_t _imu_index, uint8_t _core_index)
     gyro_index_active = imu_index;
     accel_index_active = imu_index;
     core_index = _core_index;
-    _ahrs = frontend->_ahrs;
 
     /*
       The imu_buffer_length needs to cope with the worst case sensor delay at the
@@ -52,8 +30,8 @@ bool NavEKF3_core::setup_core(uint8_t _imu_index, uint8_t _core_index)
      */
 
     // Calculate the expected EKF time step
-    if (AP::ins().get_loop_rate_hz() > 0) {
-        dtEkfAvg = 1.0f / AP::ins().get_loop_rate_hz();
+    if (dal.ins().get_loop_rate_hz() > 0) {
+        dtEkfAvg = 1.0f / dal.ins().get_loop_rate_hz();
         dtEkfAvg = MAX(dtEkfAvg,EKF_TARGET_DT);
     } else {
         return false;
@@ -68,11 +46,12 @@ bool NavEKF3_core::setup_core(uint8_t _imu_index, uint8_t _core_index)
                                   ))));
 
     // GPS sensing can have large delays and should not be included if disabled
-    if (frontend->_fusionModeGPS != 3) {
+    if (frontend->sources.usingGPS()) {
         // Wait for the configuration of all GPS units to be confirmed. Until this has occurred the GPS driver cannot provide a correct time delay
         float gps_delay_sec = 0;
-        if (!AP::gps().get_lag(selected_gps, gps_delay_sec)) {
-            const uint32_t now = AP_HAL::millis();
+        if (!dal.gps().get_lag(selected_gps, gps_delay_sec)) {
+#ifndef HAL_NO_GCS
+            const uint32_t now = dal.millis();
             if (now - lastInitFailReport_ms > 10000) {
                 lastInitFailReport_ms = now;
                 // provide an escalating series of messages
@@ -82,8 +61,9 @@ bool NavEKF3_core::setup_core(uint8_t _imu_index, uint8_t _core_index)
                 } else if (now > 15000) {
                     severity = MAV_SEVERITY_WARNING;
                 }
-                gcs().send_text(severity, "EKF3 waiting for GPS config data");
+                GCS_SEND_TEXT(severity, "EKF3 waiting for GPS config data");
             }
+#endif
             return false;
         }
         // limit the time delay value from the GPS library to a max of 250 msec which is the max value the EKF has been tested for.
@@ -91,13 +71,13 @@ bool NavEKF3_core::setup_core(uint8_t _imu_index, uint8_t _core_index)
     }
 
     // airspeed sensing can have large delays and should not be included if disabled
-    if (_ahrs->airspeed_sensor_enabled()) {
+    if (dal.airspeed_sensor_enabled()) {
         maxTimeDelay_ms = MAX(maxTimeDelay_ms , frontend->tasDelay_ms);
     }
 
 #if HAL_VISUALODOM_ENABLED
     // include delay from visual odometry if enabled
-    AP_VisualOdom *visual_odom = AP::visualodom();
+    const auto *visual_odom = dal.visualodom();
     if ((visual_odom != nullptr) && visual_odom->enabled()) {
         maxTimeDelay_ms = MAX(maxTimeDelay_ms, MIN(visual_odom->get_delay_ms(), 250));
     }
@@ -133,33 +113,34 @@ bool NavEKF3_core::setup_core(uint8_t _imu_index, uint8_t _core_index)
     if(!storedBaro.init(obs_buffer_length)) {
         return false;
     }
-    if(!storedTAS.init(obs_buffer_length)) {
+    if(dal.airspeed() && !storedTAS.init(obs_buffer_length)) {
         return false;
     }
-    if (!storedOF.init(flow_buffer_length)) {
+    if(dal.opticalflow_enabled() && !storedOF.init(flow_buffer_length)) {
         return false;
     }
-    if(!storedBodyOdm.init(obs_buffer_length)) {
+    if(frontend->sources.ext_nav_enabled() && !storedBodyOdm.init(obs_buffer_length)) {
         return false;
     }
-    if(!storedWheelOdm.init(imu_buffer_length)) { // initialise to same length of IMU to allow for multiple wheel sensors
+    if(frontend->sources.wheel_encoder_enabled() && !storedWheelOdm.init(imu_buffer_length)) {
+        // initialise to same length of IMU to allow for multiple wheel sensors
         return false;
     }
-    if(!storedYawAng.init(yaw_angle_buffer_length)) {
+    if(frontend->sources.ext_yaw_enabled() && !storedYawAng.init(yaw_angle_buffer_length)) {
         return false;
     }
     // Note: the use of dual range finders potentially doubles the amount of data to be stored
-    if(!storedRange.init(MIN(2*obs_buffer_length , imu_buffer_length))) {
+    if(dal.rangefinder() && !storedRange.init(MIN(2*obs_buffer_length , imu_buffer_length))) {
         return false;
     }
     // Note: range beacon data is read one beacon at a time and can arrive at a high rate
-    if(!storedRangeBeacon.init(imu_buffer_length+1)) {
+    if(dal.beacon() && !storedRangeBeacon.init(imu_buffer_length+1)) {
         return false;
     }
-    if (!storedExtNav.init(extnav_buffer_length)) {
+    if (frontend->sources.ext_nav_enabled() && !storedExtNav.init(extnav_buffer_length)) {
         return false;
     }
-    if (!storedExtNavVel.init(extnav_buffer_length)) {
+    if (frontend->sources.ext_nav_enabled() && !storedExtNavVel.init(extnav_buffer_length)) {
         return false;
     }
     if(!storedIMU.init(imu_buffer_length)) {
@@ -168,7 +149,7 @@ bool NavEKF3_core::setup_core(uint8_t _imu_index, uint8_t _core_index)
     if(!storedOutput.init(imu_buffer_length)) {
         return false;
     }
-    gcs().send_text(MAV_SEVERITY_INFO, "EKF3 IMU%u buffs IMU=%u OBS=%u OF=%u EN:%u dt=%.4f",
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "EKF3 IMU%u buffs IMU=%u OBS=%u OF=%u EN:%u dt=%.4f",
                     (unsigned)imu_index,
                     (unsigned)imu_buffer_length,
                     (unsigned)obs_buffer_length,
@@ -178,15 +159,15 @@ bool NavEKF3_core::setup_core(uint8_t _imu_index, uint8_t _core_index)
 
     if ((yawEstimator == nullptr) && (frontend->_gsfRunMask & (1U<<core_index))) {
         // check if there is enough memory to create the EKF-GSF object
-        if (hal.util->available_memory() < sizeof(EKFGSF_yaw) + 1024) {
-            gcs().send_text(MAV_SEVERITY_CRITICAL, "EKF3 IMU%u GSF: not enough memory",(unsigned)imu_index);
+        if (dal.available_memory() < sizeof(EKFGSF_yaw) + 1024) {
+            GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "EKF3 IMU%u GSF: not enough memory",(unsigned)imu_index);
             return false;
         }
 
         // try to instantiate
         yawEstimator = new EKFGSF_yaw();
         if (yawEstimator == nullptr) {
-            gcs().send_text(MAV_SEVERITY_CRITICAL, "EKF3 IMU%uGSF: allocation failed",(unsigned)imu_index);
+            GCS_SEND_TEXT(MAV_SEVERITY_CRITICAL, "EKF3 IMU%uGSF: allocation failed",(unsigned)imu_index);
             return false;
         }
     }
@@ -203,7 +184,7 @@ bool NavEKF3_core::setup_core(uint8_t _imu_index, uint8_t _core_index)
 void NavEKF3_core::InitialiseVariables()
 {
     // calculate the nominal filter update rate
-    const AP_InertialSensor &ins = AP::ins();
+    const auto &ins = dal.ins();
     localFilterTimeStep_ms = (uint8_t)(1000*ins.get_loop_delta_t());
     localFilterTimeStep_ms = MAX(localFilterTimeStep_ms, (uint8_t)EKF_TARGET_DT_MS);
 
@@ -218,8 +199,6 @@ void NavEKF3_core::InitialiseVariables()
     lastTasPassTime_ms = 0;
     lastSynthYawTime_ms = 0;
     lastTimeGpsReceived_ms = 0;
-    secondLastGpsTime_ms = 0;
-    lastDecayTime_ms = imuSampleTime_ms;
     timeAtLastAuxEKF_ms = imuSampleTime_ms;
     flowValidMeaTime_ms = imuSampleTime_ms;
     rngValidMeaTime_ms = imuSampleTime_ms;
@@ -336,8 +315,8 @@ void NavEKF3_core::InitialiseVariables()
     gpsYawResetRequest = false;
     delAngBiasLearned = false;
     memset(&filterStatus, 0, sizeof(filterStatus));
-    gpsInhibit = false;
-    activeHgtSource = 0;
+    activeHgtSource = AP_NavEKF_Source::SourceZ::BARO;
+    prevHgtSource = activeHgtSource;
     memset(&rngMeasIndex, 0, sizeof(rngMeasIndex));
     memset(&storedRngMeasTime_ms, 0, sizeof(storedRngMeasTime_ms));
     memset(&storedRngMeas, 0, sizeof(storedRngMeas));
@@ -381,7 +360,11 @@ void NavEKF3_core::InitialiseVariables()
     bcnPosOffsetMinVar = 0.0f;
     minOffsetStateChangeFilt = 0.0f;
     rngBcnFuseDataReportIndex = 0;
-    memset(&rngBcnFusionReport, 0, sizeof(rngBcnFusionReport));
+    if (dal.beacon()) {
+        if (rngBcnFusionReport == nullptr) {
+            rngBcnFusionReport = new rngBcnFusionReport_t[dal.beacon()->count()];
+        }
+    }
     bcnPosOffsetNED.zero();
     bcnOriginEstInit = false;
 
@@ -427,7 +410,7 @@ void NavEKF3_core::InitialiseVariables()
     storedExtNavVel.reset();
 
     // initialise pre-arm message
-    hal.util->snprintf(prearm_fail_string, sizeof(prearm_fail_string), "EKF3 still initialising");
+    dal.snprintf(prearm_fail_string, sizeof(prearm_fail_string), "EKF3 still initialising");
 
     InitialiseVariablesMag();
 
@@ -450,7 +433,6 @@ void NavEKF3_core::InitialiseVariablesMag()
     magYawResetTimer_ms = imuSampleTime_ms;
     magTimeout = false;
     allMagSensorsFailed = false;
-    badMagYaw = false;
     finalInflightMagInit = false;
     mag_state.q0 = 1;
     mag_state.DCM.identity();
@@ -477,16 +459,17 @@ timee to reduce the resulting tilt error. Yaw alignment is not performed by this
 function, but is perfomred later and initiated the SelectMagFusion() function
 after the tilt has stabilised.
 */
+
 bool NavEKF3_core::InitialiseFilterBootstrap(void)
 {
     // update sensor selection (for affinity)
     update_sensor_selection();
 
     // If we are a plane and don't have GPS lock then don't initialise
-    if (assume_zero_sideslip() && AP::gps().status(preferred_gps) < AP_GPS::GPS_OK_FIX_3D) {
-        hal.util->snprintf(prearm_fail_string,
-                    sizeof(prearm_fail_string),
-                    "EKF3 init failure: No GPS lock");
+    if (assume_zero_sideslip() && dal.gps().status(preferred_gps) < AP_DAL_GPS::GPS_OK_FIX_3D) {
+        dal.snprintf(prearm_fail_string,
+                     sizeof(prearm_fail_string),
+                     "EKF3 init failure: No GPS lock");
         statesInitialised = false;
         return false;
     }
@@ -519,7 +502,7 @@ bool NavEKF3_core::InitialiseFilterBootstrap(void)
     Vector3f initAccVec;
 
     // TODO we should average accel readings over several cycles
-    initAccVec = AP::ins().get_accel(accel_index_active);
+    initAccVec = dal.ins().get_accel(accel_index_active);
 
     // normalise the acceleration vector
     float pitch=0, roll=0;
@@ -552,8 +535,12 @@ bool NavEKF3_core::InitialiseFilterBootstrap(void)
     ResetPosition(resetDataSource::DEFAULT);
     ResetHeight();
 
+    // initialise sources
+    posxy_source_last = frontend->sources.getPosXYSource();
+    yaw_source_last = frontend->sources.getYawSource();
+
     // define Earth rotation vector in the NED navigation frame
-    calcEarthRateNED(earthRateNED, _ahrs->get_home().lat);
+    calcEarthRateNED(earthRateNED, dal.get_home().lat);
 
     // initialise the covariance matrix
     CovarianceInit();
@@ -570,7 +557,7 @@ bool NavEKF3_core::InitialiseFilterBootstrap(void)
         inactiveBias[i].accel_bias.zero();
     }
 
-    gcs().send_text(MAV_SEVERITY_INFO, "EKF3 IMU%u initialised",(unsigned)imu_index);
+    GCS_SEND_TEXT(MAV_SEVERITY_INFO, "EKF3 IMU%u initialised",(unsigned)imu_index);
 
     // we initially return false to wait for the IMU buffer to fill
     return false;
@@ -637,12 +624,6 @@ void NavEKF3_core::UpdateFilter(bool predict)
         return;
     }
 
-    // start the timer used for load measurement
-#if EK3_DISABLE_INTERRUPTS
-    void *istate = hal.scheduler->disable_interrupts_save();
-#endif
-    hal.util->perf_begin(_perf_UpdateFilter);
-
     fill_scratch_variables();
 
     // update sensor selection (for affinity)
@@ -701,12 +682,6 @@ void NavEKF3_core::UpdateFilter(bool predict)
 
     // Wind output forward from the fusion to output time horizon
     calcOutputStates();
-
-    // stop the timer used for load measurement
-    hal.util->perf_end(_perf_UpdateFilter);
-#if EK3_DISABLE_INTERRUPTS
-    hal.scheduler->restore_interrupts(istate);
-#endif
 }
 
 void NavEKF3_core::correctDeltaAngle(Vector3f &delAng, float delAngDT, uint8_t gyro_index)
@@ -733,6 +708,7 @@ void NavEKF3_core::UpdateStrapdownEquationsNED()
     // apply correction for earth's rotation rate
     // % * - and + operators have been overloaded
     stateStruct.quat.rotate(delAngCorrected - prevTnb * earthRateNED*imuDataDelayed.delAngDT);
+
     stateStruct.quat.normalize();
 
     // transform body delta velocities to delta velocities in the nav frame
@@ -965,7 +941,6 @@ void NavEKF3_core::calcOutputStates()
 */
 void NavEKF3_core::CovariancePrediction(Vector3f *rotVarVecPtr)
 {
-    hal.util->perf_begin(_perf_CovariancePrediction);
     float daxVar;       // X axis delta angle noise variance rad^2
     float dayVar;       // Y axis delta angle noise variance rad^2
     float dazVar;       // Z axis delta angle noise variance rad^2
@@ -1669,8 +1644,6 @@ void NavEKF3_core::CovariancePrediction(Vector3f *rotVarVecPtr)
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
     verifyTiltErrorVariance();
 #endif
-
-    hal.util->perf_end(_perf_CovariancePrediction);
 }
 
 // zero specified range of rows in the state covariance matrix
@@ -2038,25 +2011,17 @@ void NavEKF3_core::verifyTiltErrorVariance()
     }
 
     tiltErrorVarianceAlt = MIN(tiltErrorVarianceAlt, sq(radians(30.0f)));
-
     static uint32_t lastLogTime_ms = 0;
     if (imuSampleTime_ms - lastLogTime_ms > 500) {
         lastLogTime_ms = imuSampleTime_ms;
-        // @LoggerMessage: XKTV
-        // @Description: EKF3 Yaw Estimator States
-        // @Field: TimeUS: Time since system startup
-        // @Field: C: EKF3 core this data is for
-        // @Field: TVS: Tilt Error Variance from symboolic equations (rad^2)
-        // @Field: TVD: Tilt Error Variance from difference method (rad^2)
-        AP::logger().Write("XKTV",
-                        "TimeUS,C,TVS,TVD",
-                        "s#rr",
-                        "F-00",
-                        "QBff",
-                        AP_HAL::micros64(),
-                        core_index,
-                        tiltErrorVariance,
-                        tiltErrorVarianceAlt);
+        const struct log_XKTV msg {
+            LOG_PACKET_HEADER_INIT(LOG_XKTV_MSG),
+            time_us      : dal.micros64(),
+            core         : core_index,
+            tvs          : tiltErrorVariance,
+            tvd          : tiltErrorVarianceAlt,
+        };
+        AP::logger().WriteBlock(&msg, sizeof(msg));
     }
 }
 #endif

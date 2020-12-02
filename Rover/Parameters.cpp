@@ -160,7 +160,7 @@ const AP_Param::Info Rover::var_info[] = {
     // @Description: Controls the action that will be taken when an EKF failsafe is invoked
     // @Values: 0:Disabled,1:Hold,2:ReportOnly
     // @User: Advanced
-    GSCALAR(fs_ekf_action, "FS_EKF_ACTION", FS_EFK_HOLD),
+    GSCALAR(fs_ekf_action, "FS_EKF_ACTION", FS_EKF_HOLD),
 
     // @Param: FS_EKF_THRESH
     // @DisplayName: EKF failsafe variance threshold
@@ -369,7 +369,7 @@ const AP_Param::Info Rover::var_info[] = {
     // @Path: Parameters.cpp
     GOBJECT(g2, "",  ParametersG2),
 
-#if OSD_ENABLED == ENABLED
+#if OSD_ENABLED || OSD_PARAM_ENABLED
     // @Group: OSD
     // @Path: ../libraries/AP_OSD/AP_OSD.cpp
     GOBJECT(osd, "OSD", AP_OSD),

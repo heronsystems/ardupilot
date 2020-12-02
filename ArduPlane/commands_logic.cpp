@@ -233,7 +233,8 @@ bool Plane::verify_command(const AP_Mission::Mission_Command& cmd)        // Ret
             // ground
             height -= auto_state.terrain_correction;
             return landing.verify_land(prev_WP_loc, next_WP_loc, current_loc,
-                height, auto_state.sink_rate, auto_state.wp_proportion, auto_state.last_flying_ms, arming.is_armed(), is_flying(), rangefinder_state.in_range);
+                                       height, auto_state.sink_rate, auto_state.wp_proportion, auto_state.last_flying_ms, arming.is_armed(), is_flying(),
+                                       g.rangefinder_landing && rangefinder_state.in_range);
         }
 
     case MAV_CMD_NAV_LOITER_UNLIM:
@@ -384,21 +385,7 @@ void Plane::do_land(const AP_Mission::Mission_Command& cmd)
         set_flight_stage(AP_Vehicle::FixedWing::FLIGHT_LAND);
     }
 
-#if GEOFENCE_ENABLED == ENABLED 
-    if (g.fence_autoenable == 1) {
-        if (! geofence_set_enabled(false)) {
-            gcs().send_text(MAV_SEVERITY_NOTICE, "Disable fence failed (autodisable)");
-        } else {
-            gcs().send_text(MAV_SEVERITY_NOTICE, "Fence disabled (autodisable)");
-        }
-    } else if (g.fence_autoenable == 2) {
-        if (! geofence_set_floor_enabled(false)) {
-            gcs().send_text(MAV_SEVERITY_NOTICE, "Disable fence floor failed (autodisable)");
-        } else {
-            gcs().send_text(MAV_SEVERITY_NOTICE, "Fence floor disabled (auto disable)");
-        }
-    }
-#endif
+    disable_fence_for_landing();
 }
 
 void Plane::do_landing_vtol_approach(const AP_Mission::Mission_Command& cmd)

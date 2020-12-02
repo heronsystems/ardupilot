@@ -1,6 +1,6 @@
 #include <AP_HAL/AP_HAL.h>
 
-#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL && !defined(HAL_BUILD_AP_PERIPH)
 
 #include "AP_HAL_SITL.h"
 #include "AP_HAL_SITL_Namespace.h"
@@ -90,6 +90,7 @@ void SITL_State::_usage(void)
            "\t--uartF device           set device string for UARTF\n"
            "\t--uartG device           set device string for UARTG\n"
            "\t--uartH device           set device string for UARTH\n"
+           "\t--uartI device           set device string for UARTI\n"
            "\t--rtscts                 enable rtscts on serial ports (default false)\n"
            "\t--base-port PORT         set port num for base port(default 5670) must be before -I option\n"
            "\t--rc-in-port PORT        set port num for rc in\n"
@@ -209,6 +210,7 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
     static struct timeval first_tv;
     gettimeofday(&first_tv, nullptr);
     time_t start_time_UTC = first_tv.tv_sec;
+    const bool is_replay = APM_BUILD_TYPE(APM_BUILD_Replay);
 
     enum long_options {
         CMDLINE_GIMBAL = 1,
@@ -223,6 +225,7 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
         CMDLINE_UARTF,
         CMDLINE_UARTG,
         CMDLINE_UARTH,
+        CMDLINE_UARTI,
         CMDLINE_RTSCTS,
         CMDLINE_BASE_PORT,
         CMDLINE_RCIN_PORT,
@@ -260,6 +263,7 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
         {"uartF",           true,   0, CMDLINE_UARTF},
         {"uartG",           true,   0, CMDLINE_UARTG},
         {"uartH",           true,   0, CMDLINE_UARTH},
+        {"uartI",           true,   0, CMDLINE_UARTI},
         {"rtscts",          false,  0, CMDLINE_RTSCTS},
         {"base-port",       true,   0, CMDLINE_BASE_PORT},
         {"rc-in-port",      true,   0, CMDLINE_RCIN_PORT},
@@ -272,6 +276,11 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
         {0, false, 0, 0}
     };
 
+    if (is_replay) {
+        model_str = "quad";
+        HALSITL::UARTDriver::_console = true;
+    }
+
     if (asprintf(&autotest_dir, SKETCHBOOK "/Tools/autotest") <= 0) {
         AP_HAL::panic("out of memory");
     }
@@ -282,7 +291,7 @@ void SITL_State::_parse_command_line(int argc, char * const argv[])
 
     GetOptLong gopt(argc, argv, "hwus:r:CI:P:SO:M:F:c:",
                     options);
-    while ((opt = gopt.getoption()) != -1) {
+    while (!is_replay && (opt = gopt.getoption()) != -1) {
         switch (opt) {
         case 'w':
             AP_Param::erase_all();

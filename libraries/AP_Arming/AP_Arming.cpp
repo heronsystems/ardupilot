@@ -31,8 +31,9 @@
 #include <AP_AHRS/AP_AHRS.h>
 #include <AP_Baro/AP_Baro.h>
 #include <AP_RangeFinder/AP_RangeFinder.h>
-#include <AP_Generator/AP_Generator_RichenPower.h>
+#include <AP_Generator/AP_Generator.h>
 #include <AP_Terrain/AP_Terrain.h>
+#include <AP_ADSB/AP_ADSB.h>
 #include <AP_Scripting/AP_Scripting.h>
 #include <AP_Camera/AP_RunCam.h>
 #include <AP_GyroFFT/AP_GyroFFT.h>
@@ -802,6 +803,13 @@ bool AP_Arming::system_checks(bool report)
             return false;
         }
 #endif
+#if HAL_ADSB_ENABLED
+        AP_ADSB *adsb = AP::ADSB();
+        if ((adsb != nullptr) && adsb->enabled() && adsb->init_failed()) {
+            check_failed(ARMING_CHECK_SYSTEM, report, "ADSB out of memory");
+            return false;
+        }
+#endif
     }
     if (AP::internalerror().errors() != 0) {
         uint8_t buffer[32];
@@ -944,7 +952,7 @@ bool AP_Arming::camera_checks(bool display_failure)
 
 bool AP_Arming::osd_checks(bool display_failure) const
 {
-#if OSD_ENABLED
+#if OSD_PARAM_ENABLED && OSD_ENABLED 
     if ((checks_to_perform & ARMING_CHECK_ALL) || (checks_to_perform & ARMING_CHECK_CAMERA)) {
         const AP_OSD *osd = AP::osd();
         if (osd == nullptr) {
@@ -1065,8 +1073,10 @@ bool AP_Arming::aux_auth_checks(bool display_failure)
     }
 
     // send failure or waiting message
-    if (some_failures && !failure_msg_sent) {
-        check_failed(ARMING_CHECK_AUX_AUTH, display_failure, "Auxiliary authorisation refused");
+    if (some_failures) {
+        if (!failure_msg_sent) {
+            check_failed(ARMING_CHECK_AUX_AUTH, display_failure, "Auxiliary authorisation refused");
+        }
         return false;
     } else if (waiting_for_responses) {
         check_failed(ARMING_CHECK_AUX_AUTH, display_failure, "Waiting for auxiliary authorisation");
@@ -1080,7 +1090,7 @@ bool AP_Arming::aux_auth_checks(bool display_failure)
 bool AP_Arming::generator_checks(bool display_failure) const
 {
 #if GENERATOR_ENABLED
-    const AP_Generator_RichenPower *generator = AP::generator();
+    const AP_Generator *generator = AP::generator();
     if (generator == nullptr) {
         return true;
     }

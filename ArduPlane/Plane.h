@@ -256,7 +256,7 @@ private:
     // Rally Ponints
     AP_Rally rally;
 
-#if OSD_ENABLED == ENABLED
+#if OSD_ENABLED || OSD_PARAM_ENABLED
     AP_OSD osd;
 #endif
     
@@ -955,6 +955,7 @@ private:
     void geofence_send_status(mavlink_channel_t chan);
     bool geofence_breached(void);
     void geofence_disable_and_send_error_msg(const char *errorMsg);
+    void disable_fence_for_landing(void);
 
     // ArduPlane.cpp
     void disarm_if_autoland_complete();
@@ -973,14 +974,16 @@ private:
     void afs_fs_check(void);
 #endif
     void one_second_loop(void);
+#if AP_AIRSPEED_AUTOCAL_ENABLE
     void airspeed_ratio_update(void);
+#endif 
     void compass_save(void);
     void update_logging1(void);
     void update_logging2(void);
     void update_control_mode(void);
     void update_flight_stage();
     void set_flight_stage(AP_Vehicle::FixedWing::FlightStage fs);
-#if OSD_ENABLED == ENABLED
+#if OSD_ENABLED || OSD_PARAM_ENABLED
     void publish_osd_info();
 #endif
 

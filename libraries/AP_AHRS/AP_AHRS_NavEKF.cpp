@@ -26,6 +26,7 @@
 #include <AP_GPS/AP_GPS.h>
 #include <AP_Baro/AP_Baro.h>
 #include <AP_InternalError/AP_InternalError.h>
+#include <AP_Logger/AP_Logger.h>
 #include <AP_Notify/AP_Notify.h>
 #include <AP_Vehicle/AP_Vehicle_Type.h>
 
@@ -194,11 +195,18 @@ void AP_AHRS_NavEKF::update_EKF2(void)
         if (start_time_ms == 0) {
             start_time_ms = AP_HAL::millis();
         }
-        if (AP_HAL::millis() - start_time_ms > startup_delay_ms || _force_ekf) {
-            _ekf2_started = EKF2.InitialiseFilter();
-            if (_force_ekf) {
-                return;
+        // if we're doing Replay logging then don't allow any data
+        // into the EKF yet.  Don't allow it to block us for long.
+        if (!hal.util->was_watchdog_reset()) {
+            if (AP_HAL::millis() - start_time_ms < 5000) {
+                if (!AP::logger().allow_start_ekf()) {
+                    return;
+                }
             }
+        }
+
+        if (AP_HAL::millis() - start_time_ms > startup_delay_ms) {
+            _ekf2_started = EKF2.InitialiseFilter();
         }
     }
     if (_ekf2_started) {
@@ -268,11 +276,17 @@ void AP_AHRS_NavEKF::update_EKF3(void)
         if (start_time_ms == 0) {
             start_time_ms = AP_HAL::millis();
         }
-        if (AP_HAL::millis() - start_time_ms > startup_delay_ms || _force_ekf) {
-            _ekf3_started = EKF3.InitialiseFilter();
-            if (_force_ekf) {
-                return;
+        // if we're doing Replay logging then don't allow any data
+        // into the EKF yet.  Don't allow it to block us for long.
+        if (!hal.util->was_watchdog_reset()) {
+            if (AP_HAL::millis() - start_time_ms < 5000) {
+                if (!AP::logger().allow_start_ekf()) {
+                    return;
+                }
             }
+        }
+        if (AP_HAL::millis() - start_time_ms > startup_delay_ms) {
+            _ekf3_started = EKF3.InitialiseFilter();
         }
     }
     if (_ekf3_started) {
@@ -608,13 +622,20 @@ bool AP_AHRS_NavEKF::get_secondary_attitude(Vector3f &eulers) const
     switch (active_EKF_type()) {
     case EKFType::NONE:
         // EKF is secondary
-#if HAL_NAVEKF2_AVAILABLE
-        EKF2.getEulerAngles(-1, eulers);
-        return _ekf2_started;
-#else
-        return false;
+        switch ((EKFType)_ekf_type.get()) {
+#if HAL_NAVEKF3_AVAILABLE
+        case EKFType::THREE:
+            EKF3.getEulerAngles(-1, eulers);
+            return _ekf3_started;
 #endif
-
+#if HAL_NAVEKF2_AVAILABLE
+        case EKFType::TWO:
+            EKF2.getEulerAngles(-1, eulers);
+            return _ekf2_started;
+#endif
+        default:
+            return false;
+        }
 #if HAL_NAVEKF2_AVAILABLE
     case EKFType::TWO:
 #endif
@@ -1233,15 +1254,18 @@ AP_AHRS_NavEKF::EKFType AP_AHRS_NavEKF::active_EKF_type(void) const
         (_vehicle_class == AHRS_VEHICLE_FIXED_WING ||
          _vehicle_class == AHRS_VEHICLE_GROUND) &&
         (_flags.fly_forward || !hal.util->get_soft_armed())) {
+        bool should_use_gps = true;
         nav_filter_status filt_state;
 #if HAL_NAVEKF2_AVAILABLE
         if (ret == EKFType::TWO) {
             EKF2.getFilterStatus(-1,filt_state);
+            should_use_gps = EKF2.configuredToUseGPSForPosXY();
         }
 #endif
 #if HAL_NAVEKF3_AVAILABLE
         if (ret == EKFType::THREE) {
             EKF3.getFilterStatus(-1,filt_state);
+            should_use_gps = EKF3.configuredToUseGPSForPosXY();
         }
 #endif
 #if CONFIG_HAL_BOARD == HAL_BOARD_SITL
@@ -1252,6 +1276,7 @@ AP_AHRS_NavEKF::EKFType AP_AHRS_NavEKF::active_EKF_type(void) const
         if (hal.util->get_soft_armed() &&
             (!filt_state.flags.using_gps ||
              !filt_state.flags.horiz_pos_abs) &&
+            should_use_gps &&
             AP::gps().status() >= AP_GPS::GPS_OK_FIX_3D) {
             // if the EKF is not fusing GPS or doesn't have a 2D fix
             // and we have a 3D lock, then plane and rover would
@@ -1502,32 +1527,6 @@ void AP_AHRS_NavEKF::writeExtNavVelData(const Vector3f &vel, float err, uint32_t
 #if HAL_NAVEKF3_AVAILABLE
     EKF3.writeExtNavVelData(vel, err, timeStamp_ms, delay_ms);
 #endif
-}
-
-// inhibit GPS usage
-uint8_t AP_AHRS_NavEKF::setInhibitGPS(void)
-{
-    switch (ekf_type()) {
-    case EKFType::NONE:
-        return 0;
-
-#if HAL_NAVEKF2_AVAILABLE
-    case EKFType::TWO:
-        return EKF2.setInhibitGPS();
-#endif
-
-#if HAL_NAVEKF3_AVAILABLE
-    case EKFType::THREE:
-        return EKF3.setInhibitGPS();
-#endif
-
-#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
-    case EKFType::SITL:
-        return 0;
-#endif
-    }
-    // since there is no default case above, this is unreachable
-    return 0;
 }
 
 // get speed limit
@@ -1974,6 +1973,24 @@ bool AP_AHRS_NavEKF::get_hgt_ctrl_limit(float& limit) const
 // this is not related to terrain following
 void AP_AHRS_NavEKF::set_terrain_hgt_stable(bool stable)
 {
+    // avoid repeatedly setting variable in NavEKF objects to prevent
+    // spurious event logging
+    switch (terrainHgtStableState) {
+    case TriState::UNKNOWN:
+        break;
+    case TriState::True:
+        if (stable) {
+            return;
+        }
+        break;
+    case TriState::False:
+        if (!stable) {
+            return;
+        }
+        break;
+    }
+    terrainHgtStableState = (TriState)stable;
+
 #if HAL_NAVEKF2_AVAILABLE
     EKF2.setTerrainHgtStable(stable);
 #endif
@@ -2090,8 +2107,55 @@ bool AP_AHRS_NavEKF::get_variances(float &velVar, float &posVar, float &hgtVar, 
     return false;
 }
 
+// get a source's velocity innovations.  source should be from 0 to 7 (see AP_NavEKF_Source::SourceXY)
+// returns true on success and results are placed in innovations and variances arguments
+bool AP_AHRS_NavEKF::get_vel_innovations_and_variances_for_source(uint8_t source, Vector3f &innovations, Vector3f &variances) const
+{
+    switch (ekf_type()) {
+    case EKFType::NONE:
+        // We are not using an EKF so no data
+        return false;
+
+#if HAL_NAVEKF2_AVAILABLE
+    case EKFType::TWO:
+        // EKF2 does not support source level variances
+        return false;
+#endif
+
+#if HAL_NAVEKF3_AVAILABLE
+    case EKFType::THREE:
+        // use EKF to get variance
+        return EKF3.getVelInnovationsAndVariancesForSource(-1, (AP_NavEKF_Source::SourceXY)source, innovations, variances);
+#endif
+
+#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
+    case EKFType::SITL:
+        // SITL does not support source level variances
+        return false;
+#endif
+    }
+
+    return false;
+}
+
 void AP_AHRS_NavEKF::setTakeoffExpected(bool val)
 {
+    switch (takeoffExpectedState) {
+    case TriState::UNKNOWN:
+        break;
+    case TriState::True:
+        if (val) {
+            return;
+        }
+        break;
+    case TriState::False:
+        if (!val) {
+            return;
+        }
+        break;
+    }
+    takeoffExpectedState = (TriState)val;
+
 #if HAL_NAVEKF2_AVAILABLE
     EKF2.setTakeoffExpected(val);
 #endif
@@ -2102,6 +2166,22 @@ void AP_AHRS_NavEKF::setTakeoffExpected(bool val)
 
 void AP_AHRS_NavEKF::setTouchdownExpected(bool val)
 {
+    switch (touchdownExpectedState) {
+    case TriState::UNKNOWN:
+        break;
+    case TriState::True:
+        if (val) {
+            return;
+        }
+        break;
+    case TriState::False:
+        if (!val) {
+            return;
+        }
+        break;
+    }
+    touchdownExpectedState = (TriState)val;
+
 #if HAL_NAVEKF2_AVAILABLE
     EKF2.setTouchdownExpected(val);
 #endif
@@ -2117,32 +2197,6 @@ bool AP_AHRS_NavEKF::getGpsGlitchStatus() const
         return false;
     }
     return ekf_status.flags.gps_glitching;
-}
-
-// is the EKF backend doing its own sensor logging?
-bool AP_AHRS_NavEKF::have_ekf_logging(void) const
-{
-    switch (ekf_type()) {
-    case EKFType::NONE:
-        return false;
-
-#if HAL_NAVEKF2_AVAILABLE
-    case EKFType::TWO:
-        return EKF2.have_ekf_logging();
-#endif
-
-#if HAL_NAVEKF3_AVAILABLE
-    case EKFType::THREE:
-        return EKF3.have_ekf_logging();
-#endif
-
-#if CONFIG_HAL_BOARD == HAL_BOARD_SITL
-    case EKFType::SITL:
-        return false;
-#endif
-    }
-    // since there is no default case above, this is unreachable
-    return false;
 }
 
 //get the index of the active airspeed sensor, wrt the primary core
@@ -2292,6 +2346,14 @@ void AP_AHRS_NavEKF::request_yaw_reset(void)
         break;
 #endif
     }
+}
+
+// set position, velocity and yaw sources to either 0=primary, 1=secondary, 2=tertiary
+void AP_AHRS_NavEKF::set_posvelyaw_source_set(uint8_t source_set_idx)
+{
+#if HAL_NAVEKF3_AVAILABLE
+    EKF3.setPosVelYawSourceSet(source_set_idx);
+#endif
 }
 
 void AP_AHRS_NavEKF::Log_Write()
