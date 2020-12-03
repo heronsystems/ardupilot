@@ -962,9 +962,9 @@ MAV_RESULT GCS_MAVLINK_Plane::handle_command_int_packet(const mavlink_command_in
 MAV_RESULT GCS_MAVLINK_Plane::handle_command_long_packet(const mavlink_command_long_t &packet)
 {
     switch(packet.command) {
-    case MAV_CMD_AI_DEFLECTION:
+    case SET_SURFACE_DEFLECTION_NORMALIZED:
     {
-        MAV_RESULT commandResult = SET_SURFACE_DEFLECTION_NORMALIZED;
+        MAV_RESULT commandResult = MAV_RESULT_ACCEPTED;
         printf("I saw a command of AI deflection.");
 
         if (plane.control_mode == &plane.mode_ai_deflection) { // don't execute the command unless we are in the AI mode
