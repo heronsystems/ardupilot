@@ -12,10 +12,10 @@ bool ModeAI_Deflection::_enter()
     plane.auto_throttle_mode = false;
     plane.auto_navigation_mode = false;
     
-    _servoOutput.stickAileron = plane.channel_roll->get_control_mid();
-    _servoOutput.stickElevator = plane.channel_pitch->get_control_mid();
-    _servoOutput.stickThrottle = plane.channel_throttle->get_control_mid();
-    _servoOutput.stickRudder = plane.channel_rudder->get_control_mid();
+    _servoOutput.stickAileron = plane.channel_roll->get_control_in();
+    _servoOutput.stickElevator = plane.channel_pitch->get_control_in();
+    _servoOutput.stickThrottle = plane.channel_throttle->get_control_in();
+    _servoOutput.stickRudder = plane.channel_rudder->get_control_in();
 
     return true;
 }
@@ -35,13 +35,6 @@ void ModeAI_Deflection::update()
 
     plane.steering_control.steering = plane.steering_control.rudder = _servoOutput.stickRudder;
     AP::logger().WriteAI(AP_HAL::micros64(), 1, 1000);
-
-/*
-    manual_override(plane.channel_roll, packet.y, 1000, 2000, tnow);
-    manual_override(plane.channel_pitch, packet.x, 1000, 2000, tnow, true);
-    manual_override(plane.channel_throttle, packet.z, 0, 1000, tnow);
-    manual_override(plane.channel_rudder, packet.r, 1000, 2000, tnow);
-    */
 }
 
 bool ModeAI_Deflection::is_AI_control() const
@@ -51,8 +44,36 @@ bool ModeAI_Deflection::is_AI_control() const
 
 bool ModeAI_Deflection::handleLongCommand(const mavlink_command_long_t &packet)
 {
-    printf("We are going to handle the command.");
+    if(packet.command != SET_SURFACE_DEFLECTION_NORMALIZED)
+        return false;
 
+    printf("We are going to handle the command.");
+    mapToDeflection(plane.channel_roll, packet.param2, 1, 2, false, _servoOutput.stickAileron);
+    mapToDeflection(plane.channel_pitch, packet.param3, 1, 2, false, _servoOutput.stickElevator);
+    mapToDeflection(plane.channel_throttle, packet.param4, 1, 2, false, _servoOutput.stickThrottle);
+    mapToDeflection(plane.channel_rudder, packet.param5, 1, 2, false, _servoOutput.stickRudder);
+
+    update();
+    
     //take the params and map them to the servos
     return true;
 }
+
+void ModeAI_Deflection::mapToDeflection(RC_Channel *c, float value_in, const uint16_t &offset, const float &scaler, const bool &reversed, int16_t &servoValue)
+{
+    if (c == nullptr) {
+        return;
+    }
+
+    int16_t override_value = 0;
+    if (value_in != INT16_MAX) {
+        const int16_t radio_min = c->get_radio_min();
+        const int16_t radio_max = c->get_radio_max();
+        if (reversed) {
+            value_in *= -1;
+        }
+    servoValue = radio_min + (radio_max - radio_min) * (value_in + offset) / scaler;
+    
+    }
+}
+

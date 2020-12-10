@@ -974,7 +974,6 @@ MAV_RESULT GCS_MAVLINK_Plane::handle_command_long_packet(const mavlink_command_l
             // a AI deflection control message updates the time for the failsafe purposes
             uint32_t tnow = AP_HAL::millis();
             plane.failsafe.last_AI_ms = tnow;
-
         }
         else
         {
