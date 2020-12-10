@@ -59,20 +59,20 @@ bool ModeAI_Deflection::handleLongCommand(const mavlink_command_long_t &packet)
     return true;
 }
 
-void ModeAI_Deflection::mapToDeflection(RC_Channel *c, float value_in, const uint16_t &offset, const float &scaler, const bool &reversed, int16_t &servoValue)
+void ModeAI_Deflection::mapToDeflection(RC_Channel *c, const int16_t &value_in, const uint16_t &offset, const float &scaler, const bool &reversed, int16_t &servoValue)
 {
     if (c == nullptr) {
         return;
     }
+    int16_t currentValue = value_in;
 
-    int16_t override_value = 0;
     if (value_in != INT16_MAX) {
         const int16_t radio_min = c->get_radio_min();
         const int16_t radio_max = c->get_radio_max();
         if (reversed) {
-            value_in *= -1;
+            currentValue *= -1;
         }
-    servoValue = radio_min + (radio_max - radio_min) * (value_in + offset) / scaler;
+    servoValue = radio_min + (radio_max - radio_min) * (currentValue + offset) / scaler;
     
     }
 }
