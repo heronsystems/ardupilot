@@ -597,7 +597,7 @@ protected:
     void _exit() override;
 
 private: 
-    void mapToDeflection(RC_Channel *c, const int16_t &value_in, const uint16_t &offset, const float &scaler, const bool &reversed, int16_t &servoValue);
+    void mapToDeflection(RC_Channel *c, const float &value_in, const uint16_t &offset, const float &scaler, const bool &reversed, int16_t &servoValue);
 
 };
 

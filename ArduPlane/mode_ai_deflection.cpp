@@ -48,10 +48,13 @@ bool ModeAI_Deflection::handleLongCommand(const mavlink_command_long_t &packet)
         return false;
 
     printf("We are going to handle the command.");
-    mapToDeflection(plane.channel_roll, packet.param2, 1, 2, false, _servoOutput.stickAileron);
-    mapToDeflection(plane.channel_pitch, packet.param3, 1, 2, false, _servoOutput.stickElevator);
-    mapToDeflection(plane.channel_throttle, packet.param4, 1, 2, false, _servoOutput.stickThrottle);
-    mapToDeflection(plane.channel_rudder, packet.param5, 1, 2, false, _servoOutput.stickRudder);
+    mapToDeflection(plane.channel_pitch, packet.param2, 1, 2, false, _servoOutput.stickElevator);
+    mapToDeflection(plane.channel_roll, packet.param3, 1, 2, false, _servoOutput.stickAileron);
+    mapToDeflection(plane.channel_rudder, packet.param4, 1, 2, false, _servoOutput.stickRudder);
+    mapToDeflection(plane.channel_throttle, packet.param5, 0, 1, false, _servoOutput.stickThrottle);
+
+    printf("\nPacket: \n%f / %f / %f / %f\n", packet.param2, packet.param3, packet.param4, packet.param5);
+    printf("Servo output: \n%d / %d / %d / %d\n", _servoOutput.stickElevator, _servoOutput.stickAileron, _servoOutput.stickRudder, _servoOutput.stickThrottle);
 
     update();
     
@@ -59,12 +62,13 @@ bool ModeAI_Deflection::handleLongCommand(const mavlink_command_long_t &packet)
     return true;
 }
 
-void ModeAI_Deflection::mapToDeflection(RC_Channel *c, const int16_t &value_in, const uint16_t &offset, const float &scaler, const bool &reversed, int16_t &servoValue)
+void ModeAI_Deflection::mapToDeflection(RC_Channel *c, const float &value_in, const uint16_t &offset, const float &scaler, const bool &reversed, int16_t &servoValue)
 {
     if (c == nullptr) {
+        printf("        ****    NULLPTR     ****");
         return;
     }
-    int16_t currentValue = value_in;
+    float currentValue = value_in;
 
     if (value_in != INT16_MAX) {
         const int16_t radio_min = c->get_radio_min();
@@ -72,7 +76,7 @@ void ModeAI_Deflection::mapToDeflection(RC_Channel *c, const int16_t &value_in, 
         if (reversed) {
             currentValue *= -1;
         }
-    servoValue = radio_min + (radio_max - radio_min) * (currentValue + offset) / scaler;
+    servoValue = (float)radio_min + ((float)radio_max - (float)radio_min) * ((float)currentValue + (float)offset) / scaler;
     
     }
 }
