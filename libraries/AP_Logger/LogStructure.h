@@ -1308,6 +1308,12 @@ struct PACKED log_AIDeflection {
     uint64_t time_us;
     float normalizedAileron;
     int16_t pwmAileron;
+    // float normalizedElevator;
+    // int16_t pwmElevator;
+    // float normalizedRudder;
+    // int16_t pwmRudder;
+    // float normalizedThrottle;
+    // int16_t pwmThrottle;
 };
 
 // FMT messages define all message formats other than FMT

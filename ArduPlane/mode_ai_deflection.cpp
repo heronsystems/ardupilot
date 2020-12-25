@@ -29,18 +29,33 @@ void ModeAI_Deflection::_exit()
 
 void ModeAI_Deflection::update()
 {
-    SRV_Channels::set_output_scaled(SRV_Channel::k_aileron, _servoOutput.stickAileron);
-    SRV_Channels::set_output_scaled(SRV_Channel::k_elevator, _servoOutput.stickElevator);
-    SRV_Channels::set_output_scaled(SRV_Channel::k_throttle, _servoOutput.stickThrottle);
+    SRV_Channels::set_output_pwm(SRV_Channel::k_aileron, _servoOutput.stickAileron);
+    SRV_Channels::set_output_pwm(SRV_Channel::k_elevator, _servoOutput.stickElevator);
+    SRV_Channels::set_output_pwm(SRV_Channel::k_throttle, _servoOutput.stickThrottle);
 
     plane.steering_control.steering = plane.steering_control.rudder = _servoOutput.stickRudder;
-    AP::logger().WriteAI(AP_HAL::micros64(), 1, 1000);
 }
 
 bool ModeAI_Deflection::is_AI_control() const
 {
     return true;
 }
+
+void ModeAI_Deflection::handleMessage(const mavlink_execute_surface_deflection_override_t &packet)
+{
+    mapToDeflection(plane.channel_pitch, packet.deflection_elevator, 1, 2, false, _servoOutput.stickElevator);
+    mapToDeflection(plane.channel_roll, packet.deflection_aileron, 1, 2, false, _servoOutput.stickAileron);
+    mapToDeflection(plane.channel_rudder, packet.deflection_rudder, 1, 2, false, _servoOutput.stickRudder);
+    mapToDeflection(plane.channel_throttle, packet.deflection_throttle, 0, 1, false, _servoOutput.stickThrottle);
+
+    AP::logger().WriteAI(AP_HAL::micros64(), packet.deflection_elevator, _servoOutput.stickElevator,
+                         packet.deflection_aileron, _servoOutput.stickAileron,
+                         packet.deflection_rudder, _servoOutput.stickRudder,
+                         packet.deflection_throttle, _servoOutput.stickThrottle);
+
+    update();
+}
+
 
 bool ModeAI_Deflection::handleLongCommand(const mavlink_command_long_t &packet)
 {

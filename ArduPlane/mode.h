@@ -592,6 +592,8 @@ public:
 
     bool handleLongCommand(const mavlink_command_long_t &packet);
 
+    void handleMessage(const mavlink_execute_surface_deflection_override_t &packet);
+
 protected:
     bool _enter() override;
     void _exit() override;
