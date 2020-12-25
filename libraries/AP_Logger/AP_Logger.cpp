@@ -1550,7 +1550,7 @@ void AP_Logger::WriteAI(const uint64_t &time_ms, const float &AI_Aileron, const 
                         const float &AI_Rudder, const int16_t &PWM_Rudder,
                         const float &AI_Throttle, const int16_t &PWM_Throttle)
 {
-    /*
+    
     struct log_AIDeflection pkt = {
         LOG_PACKET_HEADER_INIT(LOG_AIDEFL_MSG),
         time_us : time_ms,
@@ -1563,14 +1563,15 @@ void AP_Logger::WriteAI(const uint64_t &time_ms, const float &AI_Aileron, const 
         normalizedThrottle : AI_Throttle,
         pwmThrottle : PWM_Throttle
     };
-    */
+    
+   /*
        struct log_AIDeflection pkt = {
         LOG_PACKET_HEADER_INIT(LOG_AIDEFL_MSG),
         time_us : time_ms,
         normalizedAileron : AI_Aileron,
         pwmAileron : PWM_Aileron,
     };
-    
+    */
     WriteBlock(&pkt, sizeof(pkt));
 }
 

@@ -1308,12 +1308,12 @@ struct PACKED log_AIDeflection {
     uint64_t time_us;
     float normalizedAileron;
     int16_t pwmAileron;
-    // float normalizedElevator;
-    // int16_t pwmElevator;
-    // float normalizedRudder;
-    // int16_t pwmRudder;
-    // float normalizedThrottle;
-    // int16_t pwmThrottle;
+    float normalizedElevator;
+    int16_t pwmElevator;
+    float normalizedRudder;
+    int16_t pwmRudder;
+    float normalizedThrottle;
+    int16_t pwmThrottle;
 };
 
 // FMT messages define all message formats other than FMT
@@ -2441,6 +2441,12 @@ struct PACKED log_AIDeflection {
 // @Field: TimeUS: Time since system startup
 // @Field: Norm_Aileron: Time since system startup
 // @Field: PWM_Aileron: Time since system startup
+// @Field: Norm_Elevator: Time since system startup
+// @Field: PWM_Elevator: Time since system startup
+// @Field: Norm_Rudder: Time since system startup
+// @Field: PWM_Rudder: Time since system startup
+// @Field: Norm_Throttle: Time since system startup
+// @Field: PWM_Throttle: Time since system startup
 
 // messages for all boards
 #define LOG_BASE_STRUCTURES \
@@ -2631,7 +2637,7 @@ LOG_STRUCTURE_FROM_NAVEKF3 \
     { LOG_PSC_MSG, sizeof(log_PSC), \
       "PSC", "Qffffffffffff", "TimeUS,TPX,TPY,PX,PY,TVX,TVY,VX,VY,TAX,TAY,AX,AY", "smmmmnnnnoooo", "F000000000000" }, \
     { LOG_AIDEFL_MSG, sizeof(log_AIDeflection), \
-      "AIDF", "Qfh", "TimeUS, Norm_Aileron, PWM_Aileron", "s--", "F00" }
+      "AIDF", "Qfhfhfhfh", "TimeUS, NAil, PAil, NEle, PEle, NRud, PRud, NThr, PThr", "s--------", "F00000000" }
 
 // @LoggerMessage: SBPH
 // @Description: Swift Health Data
