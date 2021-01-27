@@ -571,10 +571,11 @@ class ModeAI_Deflection : public Mode
 
 private:
     struct {
-        int16_t stickAileron = 1500;
-        int16_t stickElevator = 1500;
-        int16_t stickThrottle = 1500;
-        int16_t stickRudder = 1500;
+        float stickElevator = 0;
+        float stickRudder = 0;
+
+        float stickAileron = 0;
+        float stickThrottle = 0;
     } _servoOutput;
 
 public:
@@ -600,6 +601,7 @@ protected:
 
 private: 
     void mapToDeflection(RC_Channel *c, const float &value_in, const uint16_t &offset, const float &scaler, const bool &reversed, int16_t &servoValue);
+    void mapToDeflectionMixed(RC_Channel *c, const float &value_in, const uint16_t &offset, const float &scaler, const bool &reversed, float &servoValue);
 
 };
 
