@@ -814,6 +814,8 @@ void Plane::set_servos(void)
 
     if (control_mode == &mode_manual) {
         set_servos_manual_passthrough();
+    }else if(control_mode == &mode_ai_deflection){
+        //we are in the mode of ai_support there is nothing to do, but this blocks the below function
     } else {
         set_servos_controlled();
     }

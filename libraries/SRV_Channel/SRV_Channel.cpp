@@ -151,6 +151,7 @@ void SRV_Channel::set_output_norm(float value)
 // set angular range of scaled output
 void SRV_Channel::set_angle(int16_t angle)
 {
+    // printf("This set_angle called %d\n", angle);
     type_angle = true;
     high_out = angle;    
     type_setup = true;
@@ -159,6 +160,7 @@ void SRV_Channel::set_angle(int16_t angle)
 // set range of scaled output
 void SRV_Channel::set_range(uint16_t high)
 {
+    // printf("This set_range called %d\n", high);
     type_angle = false;
     high_out = high;
     type_setup = true;

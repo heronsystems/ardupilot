@@ -1303,6 +1303,19 @@ struct PACKED log_PSC {
     float accel_y;
 };
 
+struct PACKED log_AIDeflection {
+    LOG_PACKET_HEADER;
+    uint64_t time_us;
+    float normalizedAileron;
+    int16_t pwmAileron;
+    float normalizedElevator;
+    int16_t pwmElevator;
+    float normalizedRudder;
+    int16_t pwmRudder;
+    float normalizedThrottle;
+    int16_t pwmThrottle;
+};
+
 // FMT messages define all message formats other than FMT
 // UNIT messages define units which can be referenced by FMTU messages
 // FMTU messages associate types (e.g. centimeters/second/second) to FMT message fields
@@ -2423,6 +2436,18 @@ struct PACKED log_PSC {
 // @Field: AX: Acceleration, X-axis
 // @Field: AY: Acceleration, Y-axis
 
+// @LoggerMessage: AIDeflection
+// @Description: Position Control data
+// @Field: TimeUS: Time since system startup
+// @Field: Norm_Aileron: Time since system startup
+// @Field: PWM_Aileron: Time since system startup
+// @Field: Norm_Elevator: Time since system startup
+// @Field: PWM_Elevator: Time since system startup
+// @Field: Norm_Rudder: Time since system startup
+// @Field: PWM_Rudder: Time since system startup
+// @Field: Norm_Throttle: Time since system startup
+// @Field: PWM_Throttle: Time since system startup
+
 // messages for all boards
 #define LOG_BASE_STRUCTURES \
     { LOG_FORMAT_MSG, sizeof(log_Format), \
@@ -2610,7 +2635,9 @@ LOG_STRUCTURE_FROM_NAVEKF3 \
     { LOG_WINCH_MSG, sizeof(log_Winch), \
       "WINC", "QBBBBBfffHfb", "TimeUS,Heal,ThEnd,Mov,Clut,Mode,DLen,Len,DRate,Tens,Vcc,Temp", "s-----mmn?vO", "F-----000000" }, \
     { LOG_PSC_MSG, sizeof(log_PSC), \
-      "PSC", "Qffffffffffff", "TimeUS,TPX,TPY,PX,PY,TVX,TVY,VX,VY,TAX,TAY,AX,AY", "smmmmnnnnoooo", "F000000000000" }
+      "PSC", "Qffffffffffff", "TimeUS,TPX,TPY,PX,PY,TVX,TVY,VX,VY,TAX,TAY,AX,AY", "smmmmnnnnoooo", "F000000000000" }, \
+    { LOG_AIDEFL_MSG, sizeof(log_AIDeflection), \
+      "AIDF", "Qfhfhfhfh", "TimeUS, NAil, PAil, NEle, PEle, NRud, PRud, NThr, PThr", "s--------", "F00000000" }
 
 // @LoggerMessage: SBPH
 // @Description: Swift Health Data
@@ -2760,6 +2787,8 @@ enum LogMessages : uint8_t {
     LOG_WINCH_MSG,
     LOG_PSC_MSG,
 
+    LOG_AIDEFL_MSG, 
+    
     _LOG_LAST_MSG_
 };
 

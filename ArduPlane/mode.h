@@ -75,8 +75,10 @@ public:
     virtual bool is_vtol_mode() const { return false; }
     virtual bool is_vtol_man_throttle() const;
     virtual bool is_vtol_man_mode() const { return false; }
+
     // guided or adsb mode
     virtual bool is_guided_mode() const { return false; }
+    virtual bool is_AI_control() const {return false; }
 
     // true if mode can have terrain following disabled by switch
     virtual bool allows_terrain_disable() const { return false; }
@@ -566,7 +568,18 @@ protected:
 
 class ModeAI_Deflection : public Mode
 {
+
+private:
+    struct {
+        float stickElevator = 0;
+        float stickRudder = 0;
+
+        float stickAileron = 0;
+        float stickThrottle = 0;
+    } _servoOutput;
+
 public:
+    ModeAI_Deflection();
 
     Mode::Number mode_number() const override { return Mode::Number::AI_DEFL; }
     const char *name() const override { return "AI_DEFL"; }
@@ -575,9 +588,20 @@ public:
     // methods that affect movement of the vehicle in this mode
     void update() override;
 
-protected:
+public:
+    bool is_AI_control() const override;
 
+    bool handleLongCommand(const mavlink_command_long_t &packet);
+
+    void handleMessage(const mavlink_execute_surface_deflection_override_t &packet);
+
+protected:
     bool _enter() override;
     void _exit() override;
+
+private: 
+    void mapToDeflection(RC_Channel *c, const float &value_in, const uint16_t &offset, const float &scaler, const bool &reversed, int16_t &servoValue);
+    void mapToDeflectionMixed(RC_Channel *c, const float &value_in, const uint16_t &offset, const float &scaler, const bool &reversed, float &servoValue);
+
 };
 

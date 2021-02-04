@@ -62,7 +62,7 @@ MAV_MODE GCS_MAVLINK_Plane::base_mode() const
         _base_mode |= MAV_MODE_FLAG_STABILIZE_ENABLED;        
     }
 
-    if (plane.control_mode != &plane.mode_manual && plane.control_mode != &plane.mode_initializing) {
+    if (plane.control_mode != &plane.mode_manual && plane.control_mode != &plane.mode_ai_deflection && plane.control_mode != &plane.mode_initializing) {
         // stabiliser of some form is enabled
         _base_mode |= MAV_MODE_FLAG_STABILIZE_ENABLED;
     }
@@ -962,6 +962,24 @@ MAV_RESULT GCS_MAVLINK_Plane::handle_command_int_packet(const mavlink_command_in
 MAV_RESULT GCS_MAVLINK_Plane::handle_command_long_packet(const mavlink_command_long_t &packet)
 {
     switch(packet.command) {
+    case SET_SURFACE_DEFLECTION_NORMALIZED:
+    {
+        MAV_RESULT commandResult = MAV_RESULT_ACCEPTED;
+
+        if (plane.control_mode == &plane.mode_ai_deflection) { // don't execute the command unless we are in the AI mode
+
+            plane.mode_ai_deflection.handleLongCommand(packet);
+            
+            // a AI deflection control message updates the time for the failsafe purposes
+            uint32_t tnow = AP_HAL::millis();
+            plane.failsafe.last_AI_ms = tnow;
+        }
+        else
+        {
+            commandResult = MAV_RESULT_FAILED;
+        }
+        return commandResult;
+    }
     case MAV_CMD_DO_CHANGE_SPEED: {
         // if we're in failsafe modes (e.g., RTL, LOITER) or in pilot
         // controlled modes (e.g., MANUAL, TRAINING)
@@ -1174,6 +1192,21 @@ void GCS_MAVLINK_Plane::handleMessage(const mavlink_message_t &msg)
 {
     switch (msg.msgid) {
 
+    case MAVLINK_MSG_ID_EXECUTE_SURFACE_DEFLECTION_OVERRIDE:
+    {
+        if (plane.control_mode == &plane.mode_ai_deflection)
+        { // don't execute the command unless we are in the AI mode
+            mavlink_execute_surface_deflection_override_t packet;
+            mavlink_msg_execute_surface_deflection_override_decode(&msg, &packet);
+
+            plane.mode_ai_deflection.handleMessage(packet);
+
+            // a AI deflection control message updates the time for the failsafe purposes
+            uint32_t tnow = AP_HAL::millis();
+            plane.failsafe.last_AI_ms = tnow;
+        }
+        break;
+    }
 #if GEOFENCE_ENABLED == ENABLED
     // receive a fence point from GCS and store in EEPROM
     case MAVLINK_MSG_ID_FENCE_POINT: {
@@ -1477,7 +1510,15 @@ void GCS_MAVLINK_Plane::handleMessage(const mavlink_message_t &msg)
 
         break;
     }
+    case MAVLINK_MSG_ID_WRITE_EVENT_TO_LOG:
+    {
+        // decode packet
+        mavlink_write_event_to_log_t packet;
+        mavlink_msg_write_event_to_log_decode(&msg, &packet);
 
+        //AP_Logger::WriteTestEvent(packet.event_type, packet.text);
+        break;
+    }
     case MAVLINK_MSG_ID_ADSB_VEHICLE:
     case MAVLINK_MSG_ID_UAVIONIX_ADSB_OUT_CFG:
     case MAVLINK_MSG_ID_UAVIONIX_ADSB_OUT_DYNAMIC:

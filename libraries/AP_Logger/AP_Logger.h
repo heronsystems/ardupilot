@@ -299,6 +299,12 @@ public:
     void WriteCritical(const char *name, const char *labels, const char *units, const char *mults, const char *fmt, ...);
     void WriteV(const char *name, const char *labels, const char *units, const char *mults, const char *fmt, va_list arg_list, bool is_critical=false);
 
+    void WriteTestEvent(const uint8_t &type, const char *text);
+    void WriteAI(const uint64_t &time_ms, const float &AI_Aileron, const int16_t &PWM_Aileron,
+                        const float &AI_Elevator, const int16_t &PWM_Elevator,
+                        const float &AI_Rudder, const int16_t &PWM_Rudder,
+                        const float &AI_Throttle, const int16_t &PWM_Throttle);
+
     // This structure provides information on the internal member data of a PID for logging purposes
     struct PID_Info {
         float target;
