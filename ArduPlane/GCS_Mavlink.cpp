@@ -2,6 +2,8 @@
 
 #include "Plane.h"
 
+#include <iostream>
+
 MAV_TYPE GCS_Plane::frame_type() const
 {
     return plane.quadplane.get_mav_type();
@@ -1191,7 +1193,6 @@ MAV_RESULT GCS_MAVLINK_Plane::handle_command_long_packet(const mavlink_command_l
 void GCS_MAVLINK_Plane::handleMessage(const mavlink_message_t &msg)
 {
     switch (msg.msgid) {
-
     case MAVLINK_MSG_ID_EXECUTE_SURFACE_DEFLECTION_OVERRIDE:
     {
         if (plane.control_mode == &plane.mode_ai_deflection)
@@ -1508,15 +1509,6 @@ void GCS_MAVLINK_Plane::handleMessage(const mavlink_message_t &msg)
             }
         } // end if alt_mask       
 
-        break;
-    }
-    case MAVLINK_MSG_ID_WRITE_EVENT_TO_LOG:
-    {
-        // decode packet
-        mavlink_write_event_to_log_t packet;
-        mavlink_msg_write_event_to_log_decode(&msg, &packet);
-
-        //AP_Logger::WriteTestEvent(packet.event_type, packet.text);
         break;
     }
     case MAVLINK_MSG_ID_ADSB_VEHICLE:

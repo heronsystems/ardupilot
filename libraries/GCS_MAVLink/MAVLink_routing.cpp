@@ -110,7 +110,7 @@ bool MAVLink_routing::check_and_forward(mavlink_channel_t in_channel, const mavl
         // don't forward RADIO packets
         return true;
     }
-    
+
     if (msg.msgid == MAVLINK_MSG_ID_HEARTBEAT) {
         // heartbeat needs special handling
         handle_heartbeat(in_channel, msg);
@@ -128,6 +128,7 @@ bool MAVLink_routing::check_and_forward(mavlink_channel_t in_channel, const mavl
     get_targets(msg, target_system, target_component);
 
     bool broadcast_system = (target_system == 0 || target_system == -1);
+
     bool broadcast_component = (target_component == 0 || target_component == -1);
     bool match_system = broadcast_system || (target_system == mavlink_system.sysid);
     bool match_component = match_system && (broadcast_component || 

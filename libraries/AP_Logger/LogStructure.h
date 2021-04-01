@@ -1316,6 +1316,13 @@ struct PACKED log_AIDeflection {
     int16_t pwmThrottle;
 };
 
+struct PACKED log_AIEvent {
+    LOG_PACKET_HEADER;
+    uint64_t time_us;
+    uint8_t type;
+    char descriptor[64];
+};
+
 // FMT messages define all message formats other than FMT
 // UNIT messages define units which can be referenced by FMTU messages
 // FMTU messages associate types (e.g. centimeters/second/second) to FMT message fields
@@ -2601,6 +2608,8 @@ struct PACKED log_AIDeflection {
       "ISBD",ISBD_FMT,ISBD_LABELS, ISBD_UNITS, ISBD_MULTS }, \
     { LOG_ORGN_MSG, sizeof(log_ORGN), \
       "ORGN","QBLLe","TimeUS,Type,Lat,Lng,Alt", "s-DUm", "F-GGB" },   \
+    { LOG_AIEVENT_MSG, sizeof(log_AIEvent), \
+      "AIEV", "QBZ", "TimeUS, Type, Text", "s--", "F--" }, \
 LOG_STRUCTURE_FROM_DAL \
 LOG_STRUCTURE_FROM_NAVEKF2 \
 LOG_STRUCTURE_FROM_NAVEKF3 \
@@ -2787,7 +2796,8 @@ enum LogMessages : uint8_t {
     LOG_WINCH_MSG,
     LOG_PSC_MSG,
 
-    LOG_AIDEFL_MSG, 
+    LOG_AIDEFL_MSG,
+    LOG_AIEVENT_MSG,
     
     _LOG_LAST_MSG_
 };

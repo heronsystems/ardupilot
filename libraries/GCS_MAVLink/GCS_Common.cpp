@@ -1326,34 +1326,52 @@ void GCS_MAVLINK::send_message(enum ap_message id)
 void GCS_MAVLINK::packetReceived(const mavlink_status_t &status,
                                  const mavlink_message_t &msg)
 {
-    // we exclude radio packets because we historically used this to
-    // make it possible to use the CLI over the radio
-    if (msg.msgid != MAVLINK_MSG_ID_RADIO && msg.msgid != MAVLINK_MSG_ID_RADIO_STATUS) {
-        mavlink_active |= (1U<<(chan-MAVLINK_COMM_0));
+    if(msg.msgid == MAVLINK_MSG_ID_WRITE_EVENT_TO_LOG)
+    {
+        handleMessage(msg);
     }
-    if (!(status.flags & MAVLINK_STATUS_FLAG_IN_MAVLINK1) &&
-        (status.flags & MAVLINK_STATUS_FLAG_OUT_MAVLINK1) &&
-        AP::serialmanager().get_mavlink_protocol(chan) == AP_SerialManager::SerialProtocol_MAVLink2) {
-        // if we receive any MAVLink2 packets on a connection
-        // currently sending MAVLink1 then switch to sending
-        // MAVLink2
-        mavlink_status_t *cstatus = mavlink_get_channel_status(chan);
-        if (cstatus != nullptr) {
-            cstatus->flags &= ~MAVLINK_STATUS_FLAG_OUT_MAVLINK1;
+    else
+    {
+        // we exclude radio packets because we historically used this to
+        // make it possible to use the CLI over the radio
+        if (msg.msgid != MAVLINK_MSG_ID_RADIO && msg.msgid != MAVLINK_MSG_ID_RADIO_STATUS)
+        {
+            mavlink_active |= (1U << (chan - MAVLINK_COMM_0));
         }
+
+        if (!(status.flags & MAVLINK_STATUS_FLAG_IN_MAVLINK1) &&
+            (status.flags & MAVLINK_STATUS_FLAG_OUT_MAVLINK1) &&
+            AP::serialmanager().get_mavlink_protocol(chan) == AP_SerialManager::SerialProtocol_MAVLink2)
+        {
+            // if we receive any MAVLink2 packets on a connection
+            // currently sending MAVLink1 then switch to sending
+            // MAVLink2
+            mavlink_status_t *cstatus = mavlink_get_channel_status(chan);
+            if (cstatus != nullptr)
+            {
+                cstatus->flags &= ~MAVLINK_STATUS_FLAG_OUT_MAVLINK1;
+            }
+        }
+
+        if (!routing.check_and_forward(chan, msg))
+        {
+            // the routing code has indicated we should not handle this packet locally
+            return;
+        }
+
+        if (msg.msgid == MAVLINK_MSG_ID_GLOBAL_POSITION_INT)
+        {
+            handle_mount_message(msg);
+        }
+
+        if (!accept_packet(status, msg))
+        {
+            // e.g. enforce-sysid says we shouldn't look at this packet
+            return;
+        }
+
+        handleMessage(msg);
     }
-    if (!routing.check_and_forward(chan, msg)) {
-        // the routing code has indicated we should not handle this packet locally
-        return;
-    }
-    if (msg.msgid == MAVLINK_MSG_ID_GLOBAL_POSITION_INT) {
-        handle_mount_message(msg);
-    }
-    if (!accept_packet(status, msg)) {
-        // e.g. enforce-sysid says we shouldn't look at this packet
-        return;
-    }
-    handleMessage(msg);
 }
 
 void
@@ -3370,8 +3388,17 @@ void GCS_MAVLINK::handle_common_message(const mavlink_message_t &msg)
     case MAVLINK_MSG_ID_OSD_PARAM_SHOW_CONFIG:
         handle_osd_param_config(msg);
         break;
-    }
+    case MAVLINK_MSG_ID_WRITE_EVENT_TO_LOG:
+    {
+        // decode packet
+        mavlink_write_event_to_log_t packet;
+        mavlink_msg_write_event_to_log_decode(&msg, &packet);
 
+        AP::logger().WriteAIEvent(AP_HAL::micros64(), packet.event_type, packet.text);
+        break;
+    }
+    
+    }
 }
 
 void GCS_MAVLINK::handle_common_mission_message(const mavlink_message_t &msg)

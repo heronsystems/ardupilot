@@ -1540,11 +1540,6 @@ void AP_Logger::Write_Event(LogEvent id)
     WriteCriticalBlock(&pkt, sizeof(pkt));
 }
 
-void AP_Logger::WriteTestEvent(const uint8_t &type, const char *text)
-{
-
-}
-
 void AP_Logger::WriteAI(const uint64_t &time_ms, const float &AI_Aileron, const int16_t &PWM_Aileron,
                         const float &AI_Elevator, const int16_t &PWM_Elevator,
                         const float &AI_Rudder, const int16_t &PWM_Rudder,
@@ -1574,6 +1569,20 @@ void AP_Logger::WriteAI(const uint64_t &time_ms, const float &AI_Aileron, const 
     */
     WriteBlock(&pkt, sizeof(pkt));
 }
+
+void AP_Logger::WriteAIEvent(const uint64_t &time_ms, const uint8_t &type, const char *str)
+{
+    struct log_AIEvent pkt = {
+        LOG_PACKET_HEADER_INIT(LOG_AIEVENT_MSG),
+        time_us : time_ms,
+        type : type,
+        descriptor : {}
+    };
+    strncpy_noterm(pkt.descriptor, str, sizeof(pkt.descriptor));
+
+    WriteBlock(&pkt, sizeof(pkt));
+}
+
 
 // Write an error packet
 void AP_Logger::Write_Error(LogErrorSubsystem sub_system,
