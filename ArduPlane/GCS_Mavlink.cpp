@@ -2,8 +2,6 @@
 
 #include "Plane.h"
 
-#include <iostream>
-
 MAV_TYPE GCS_Plane::frame_type() const
 {
     return plane.quadplane.get_mav_type();
@@ -1192,6 +1190,19 @@ MAV_RESULT GCS_MAVLINK_Plane::handle_command_long_packet(const mavlink_command_l
 
 void GCS_MAVLINK_Plane::handleMessage(const mavlink_message_t &msg)
 {
+    // Check if in mode_ai_deflection and we have NOT received a message in N seconds, abort/RTL:
+    uint32_t diff_ai_ms = AP_HAL::millis() - plane.failsafe.last_AI_ms;
+    if (plane.control_mode == &plane.mode_ai_deflection && 
+        diff_ai_ms > 200) // msec, twice the amount of our slowest AI models at 10Hz
+    {
+        plane.set_mode(plane.mode_rtl, ModeReason::AI_HEARTBEAT);
+        plane.aparm.throttle_cruise.load();
+
+        // Write event to log:        
+        AP::logger().WriteAIEvent(AP_HAL::micros64(), LOGGING_EVENT_TAGS::ABORTED_TEST, "AI heartbeat failsafe");
+    }
+
+
     switch (msg.msgid) {
     case MAVLINK_MSG_ID_EXECUTE_SURFACE_DEFLECTION_OVERRIDE:
     {
