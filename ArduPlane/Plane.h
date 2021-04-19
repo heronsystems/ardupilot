@@ -28,6 +28,7 @@
 #include <cmath>
 #include <stdarg.h>
 #include <stdio.h>
+#include <string>
 
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Common/AP_Common.h>
