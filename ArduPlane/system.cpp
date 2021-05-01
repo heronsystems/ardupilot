@@ -275,6 +275,11 @@ bool Plane::set_mode(Mode &new_mode, const ModeReason reason)
     notify_mode(*control_mode);
     gcs().send_message(MSG_HEARTBEAT);
 
+    // If transitioning from AI deflection mode, set AI timestamp to 0:
+    if(previous_mode == &mode_ai_deflection && previous_mode != control_mode) {
+        failsafe.last_AI_ms = 0;
+    }
+
     return true;
 }
 
@@ -327,6 +332,16 @@ void Plane::check_long_failsafe()
                    gcs().chan(0)->last_radio_status_remrssi_ms() != 0 &&
                    (tnow - gcs().chan(0)->last_radio_status_remrssi_ms()) > g.fs_timeout_long*1000) {
             failsafe_long_on_event(FAILSAFE_GCS, ModeReason::GCS_FAILSAFE);
+        } else if (failsafe.last_AI_ms != 0 &&
+                  (tnow - failsafe.last_AI_ms) > 200) { // msec, twice the amount of our slowest AI models at 10Hz
+            printf("Last heartbeat ms: %d\n", failsafe.last_AI_ms);
+            printf("Diff: %d\n", (tnow - failsafe.last_AI_ms));
+            // Perform failsafe action:
+            failsafe_long_on_event(FAILSAFE_GCS, ModeReason::AI_HEARTBEAT);
+            // Write event to log:        
+            AP::logger().WriteAIEvent(AP_HAL::micros64(), LOGGING_EVENT_TAGS::ABORTED_TEST, "AI heartbeat failsafe");
+            // Reset last_AI_ms:
+            failsafe.last_AI_ms = 0;
         }
     } else {
         uint32_t timeout_seconds = g.fs_timeout_long;

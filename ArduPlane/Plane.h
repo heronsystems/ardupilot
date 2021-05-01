@@ -28,6 +28,7 @@
 #include <cmath>
 #include <stdarg.h>
 #include <stdio.h>
+#include <string>
 
 #include <AP_HAL/AP_HAL.h>
 #include <AP_Common/AP_Common.h>
@@ -939,6 +940,7 @@ private:
     void failsafe_short_off_event(ModeReason reason);
     void failsafe_long_off_event(ModeReason reason);
     void handle_battery_failsafe(const char* type_str, const int8_t action);
+    void handle_ai_heartbeat_failsafe(const char* type_str, const int8_t action);
 
     // geofence.cpp
     uint8_t max_fencepoints(void) const;

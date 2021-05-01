@@ -2,7 +2,7 @@
 
 #include "Plane.h"
 
-#include <iostream>
+#include <string>
 
 MAV_TYPE GCS_Plane::frame_type() const
 {
